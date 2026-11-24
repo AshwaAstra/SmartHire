@@ -1,100 +1,196 @@
 # AI-Powered Smart Recruitment & Talent Management System
 
-Two-application monorepo:
+## 📌 Project Overview
 
-- `backend/`: Spring Boot REST API
-- `frontend/`: React + Vite client
-- `database/`: MySQL scripts
-- `documentation/`: API and architecture documentation
+SmartHire is an AI-powered recruitment and talent management platform designed to simplify the hiring process. It connects candidates and recruiters through resume analysis, job matching, application screening, candidate shortlisting, and interview management.
 
-## Prerequisites
-- JDK 21+
-- Maven 3.9+
-- Node.js 20+
-- MySQL 8+
-- [Ollama](https://ollama.com/download) with the `qwen2.5:1.5b` model (the optional `qwen2.5:3b` model can be used for higher-quality, slower responses)
-- Python 3.10+ for local audio transcription
+The frontend is developed using React.js, the backend uses Java and Spring Boot REST APIs, and MySQL is used for database management.
 
-## Backend
-```powershell
-cd recruitment-platform/backend
-$env:DB_URL="jdbc:mysql://localhost:3306/hack_01?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
-$env:DB_USERNAME="root"
-$env:DB_PASSWORD="your-password"
-$env:JWT_SECRET="a-long-random-secret"
-py -3.10 -m pip install -r requirements-speech.txt
-py -3.10 -c "from faster_whisper import WhisperModel; WhisperModel('tiny.en', device='cpu', compute_type='int8')" # download speech model once
-ollama pull qwen2.5:1.5b # run once; default fast model for all AI features
-ollama pull qwen2.5:3b # optional, for higher-quality, slower general AI responses
+## 🚀 Features
+
+### 👨‍🎓 Candidate Module
+- Candidate registration and login
+- Profile management and resume upload
+- Browse and apply for jobs
+- AI-based resume analysis and improvement
+- AI-powered job matching
+- AI-generated interview questions
+- Audio and video mock interviews
+- Speech-to-text transcription
+- Interview evaluation and reports
+
+### 🏢 Recruiter Module
+- Recruiter registration and company profile management
+- Create, update, and manage job postings
+- View and manage job applicants
+- AI-powered application screening
+- Candidate ranking and automatic shortlisting
+- Interview scheduling
+- Email notifications
+
+### 🛠️ Admin Module
+- Admin dashboard
+- User management
+- Recruitment analytics
+- Monitor platform activities
+
+## 🧰 Technologies Used
+
+**Frontend**
+- React.js
+- JavaScript
+- Vite
+- CSS
+
+**Backend**
+- Java
+- Spring Boot
+- Spring Web (REST APIs)
+- Spring Data JPA
+- Hibernate
+
+**Database**
+- MySQL
+
+**AI Technologies**
+- Ollama
+- Qwen 2.5
+- Faster-Whisper
+
+**Security**
+- Spring Security
+- JWT Authentication
+- Role-Based Authorization
+
+**Development Tools**
+- Eclipse IDE
+- Visual Studio Code
+- Maven
+- Postman
+- Git and GitHub
+
+## 🏗️ Project Architecture
+
+```text
+SmartHire/
+│
+├── Frontend - React.js
+│   └── src/
+│
+├── Backend - Spring Boot
+│   └── src/main/
+│       ├── java/
+│       └── resources/
+│
+├── Database - MySQL
+│
+└── README.md
+```
+
+## 🧩 Architecture Components
+
+- **Frontend:** React components provide interfaces for candidates, recruiters, and administrators.
+- **Controller Layer:** Handles HTTP requests and exposes REST API endpoints.
+- **Service Layer:** Implements business logic for recruitment, applications, AI processing, and interviews.
+- **Repository Layer:** Uses Spring Data JPA to perform database operations.
+- **Entity Layer:** Defines application data models.
+- **Security Layer:** Handles JWT authentication and role-based access.
+- **AI Integration:** Uses Ollama for AI-powered features and Faster-Whisper for audio transcription.
+- **Database:** MySQL stores user, job, application, resume, and interview information.
+
+## 🔄 Application Workflow
+
+1. Candidates and recruiters register or log in.
+2. Candidates complete their profiles and upload resumes.
+3. Recruiters create job postings with required skills and qualifications.
+4. Candidates browse available jobs and submit applications.
+5. AI analyzes resumes against job requirements and generates matching scores.
+6. Applicants are ranked based on their screening scores.
+7. The highest-scoring candidate or tied candidates are automatically shortlisted.
+8. Recruiters review screening results and schedule interviews.
+9. Candidates attend interviews and receive evaluation results.
+
+## 📋 Application Screening Workflow
+
+1. Recruiters create job postings with skills, qualifications, experience, and job descriptions.
+2. Candidates apply for available jobs.
+3. The AI screening system analyzes uploaded resumes or candidate profiles.
+4. Matching scores and supporting evidence are generated.
+5. Applicants are ranked based on their scores.
+6. The highest-scoring candidate or tied candidates are automatically shortlisted.
+7. Shortlisted candidates receive email notifications when Gmail is configured.
+
+Unreadable or empty resumes are marked for manual review. Interview scheduling remains the recruiter's decision.
+
+## 🔐 Security
+
+- JWT-based authentication for secure login and API access.
+- Role-based authorization for Candidates, Recruiters, and Admins.
+- Protected APIs based on user roles.
+- Secure password handling.
+- Database credentials and JWT secrets are kept outside source code.
+
+## 🗄️ Database Configuration
+
+Create the MySQL database:
+
+```sql
+CREATE DATABASE hack_01;
+```
+
+Configure the database connection in the Spring Boot `application.properties` file using your local MySQL credentials.
+
+Do not commit actual database passwords or other secrets to GitHub.
+
+## 📧 Gmail Configuration
+
+Gmail SMTP is used for sending interview scheduling and candidate shortlisting notifications.
+
+- Uses Gmail SMTP for sending emails.
+- Requires a Google App Password.
+- Email notifications are optional.
+- Interview schedules can be saved even when email notifications are disabled.
+
+## ▶️ How to Run the Project
+
+### 1. Start the Backend
+
+Open a terminal in the backend directory:
+
+```bash
+cd backend
 mvn spring-boot:run
 ```
 
-Speech recognition uses the local `tiny.en` Whisper model with CPU int8 inference.
-The first model setup downloads it once; recorded audio is transcribed on this
-machine and is not sent to an external API. Set `SPEECH_MODEL` or
-`SPEECH_LANGUAGE` to change the speech model or language. Video answers are
-recorded locally and evaluated using the transcript typed by the candidate.
+Make sure MySQL and Ollama are running and the required application settings are configured.
 
-The backend uses Ollama locally by default and does not need a Gemini API key.
-Ollama must be running before using AI features. The default `qwen2.5:1.5b`
-model is used across AI features for faster responses. To use another model or
-server, set `OLLAMA_MODEL`, `OLLAMA_INTERVIEW_MODEL`, or `OLLAMA_BASE_URL` before starting the backend.
-Models are kept loaded for 10 minutes between requests to reduce repeat-call
-latency. The optional `qwen2.5:3b` model may provide richer responses but is slower.
+### 2. Start the Frontend
 
-## Interview invitations
-Recruiters can shortlist applicants using the status menu, then schedule an
-interview separately. The schedule is saved in SmartHire even when email is not
-configured. To also send the candidate an email with the interview date, time
-zone, meeting details, and an optional note, configure SMTP in the same
-PowerShell window before starting the backend:
+Open another terminal:
 
-```powershell
-$env:MAIL_ENABLED="true"
-$env:MAIL_HOST="smtp.gmail.com"
-$env:MAIL_PORT="587"
-$env:MAIL_USERNAME="your-sending-address@example.com"
-$env:MAIL_PASSWORD="your-provider-app-password"
-$env:MAIL_FROM="your-sending-address@example.com"
-```
-
-For Gmail, use an app password rather than your regular account password. Keep
-mail credentials in environment variables; do not commit them. Interview emails
-remain disabled until `MAIL_ENABLED` is set to `true`.
-
-For a guided local Gmail setup, stop the existing backend and run
-`.\run-with-gmail-smtp.ps1` from the backend PowerShell terminal. Enter the
-sender Gmail address and its App Password when prompted. The script keeps the
-password out of source files and clears the mail environment variables when
-the backend process exits.
-
-Recruiter sign-up requires a company name, which appears in interview emails.
-Existing recruiters can add or update it from **Company profile**.
-
-## Applicant screening
-Recruiters can use **Screen & rank applicants** on a job's Applicants page to
-compare each uploaded resume (or candidate profile when no resume was attached)
-with that job's skills, qualifications, experience, and description using the
-local Ollama model. Results show match evidence and sort applicants by score.
-The highest-scoring applicant or tied applicants are automatically shortlisted
-and emailed a notice that interview details will follow. Re-running screening
-does not resend notices already sent. Interview dates remain a recruiter
-decision. Ollama must be running; unreadable or empty resumes are flagged for
-manual review rather than assigned a match score.
-
-If MySQL reports `Access denied for user 'root'@'localhost'`, set your local
-MySQL password in the same PowerShell window before starting Maven.
-
-```powershell
-$env:DB_URL="jdbc:mysql://localhost:3306/hack_01?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
-$env:DB_USERNAME="root"
-$env:DB_PASSWORD="your-local-mysql-password"
-mvn spring-boot:run
-```
-
-## Frontend
-```powershell
-cd recruitment-platform/frontend
+```bash
+cd frontend
 npm install
 npm run dev
 ```
+
+Open the local URL displayed in the terminal. The default Vite development URL is usually:
+
+```text
+http://localhost:5173
+```
+
+## 🧪 Testing
+
+Postman is used to test backend functionality, including:
+
+- User registration and login
+- Job management
+- Application management
+- Resume processing
+- AI-based screening
+- Interview workflows
+
+## 🎯 Project Objective
+
+The objective of SmartHire is to simplify recruitment by combining AI-powered resume analysis, job matching, application screening, candidate shortlisting, and interview management in a single platform.
