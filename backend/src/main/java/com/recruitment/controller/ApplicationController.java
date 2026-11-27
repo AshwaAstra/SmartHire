@@ -10,6 +10,7 @@ import com.recruitment.dto.ApplicationSubmission;
 import com.recruitment.dto.InterviewScheduleRequest;
 import com.recruitment.dto.InterviewScheduleResponse;
 import com.recruitment.repository.*;
+import com.recruitment.service.FileStorageService;
 import com.recruitment.service.InterviewInvitationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -24,8 +25,6 @@ import org.apache.pdfbox.text.PDFTextStripper;
 
 import jakarta.validation.Valid;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -39,10 +38,12 @@ public class ApplicationController {
     private final JobRepository jobs; private final UserRepository users;
     private final InterviewInvitationService interviewInvitations;
     private final OllamaService ai;
+    private final FileStorageService fileStorage;
     public ApplicationController(ApplicationRepository applications,CandidateRepository candidates,JobRepository jobs,
-                                 UserRepository users,InterviewInvitationService interviewInvitations,OllamaService ai){
+                                 UserRepository users,InterviewInvitationService interviewInvitations,OllamaService ai,
+                                 FileStorageService fileStorage){
         this.applications=applications;this.candidates=candidates;this.jobs=jobs;this.users=users;
-        this.interviewInvitations=interviewInvitations;this.ai=ai;
+        this.interviewInvitations=interviewInvitations;this.ai=ai;this.fileStorage=fileStorage;
     }
     @PostMapping @PreAuthorize("hasRole('CANDIDATE')")
     public ApplicationResponse apply(@RequestParam Long jobId, Authentication auth){
@@ -192,7 +193,7 @@ public class ApplicationController {
         ensureJobOwner(application.getJob(),auth);
         String path=application.getResumePath();
         if(path==null) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"This application was submitted manually");
-        return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF).body(Files.readAllBytes(Path.of(path)));
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF).body(fileStorage.read(path));
     }
     private void ensureJobOwner(Job job,Authentication auth) {
         if (auth.getAuthorities().stream().noneMatch(a -> a.getAuthority().equals("ROLE_ADMIN"))
@@ -202,7 +203,7 @@ public class ApplicationController {
     }
     private String screeningText(Application application) throws IOException {
         if (application.getResumePath()!=null) {
-            try(PDDocument document=Loader.loadPDF(Files.readAllBytes(Path.of(application.getResumePath())))) {
+            try(PDDocument document=Loader.loadPDF(fileStorage.read(application.getResumePath()))) {
                 return new PDFTextStripper().getText(document);
             }
         }

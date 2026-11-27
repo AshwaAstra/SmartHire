@@ -60,9 +60,12 @@ public class LocalTranscriptionService {
             outputFile = Files.createTempFile("smarthire-speech-", ".log");
             Files.write(audioFile, audio);
 
-            List<String> command = new ArrayList<>(List.of(
-                    pythonLauncher,
-                    "-" + pythonVersion,
+            List<String> command = new ArrayList<>();
+            command.add(pythonLauncher);
+            if (!pythonVersion.isBlank()) {
+                command.add("-" + pythonVersion);
+            }
+            command.addAll(List.of(
                     script.toString(),
                     "--audio", audioFile.toString(),
                     "--model", model,

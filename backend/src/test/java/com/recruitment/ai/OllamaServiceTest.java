@@ -4,12 +4,45 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicReference;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class OllamaServiceTest {
     private final OllamaService service =
-            new OllamaService("http://localhost:11434", "test", "test", new ObjectMapper());
+            new OllamaService("http://localhost:11434", "test", "test", "", new ObjectMapper());
+
+    @Test
+    void sendsBearerTokenWhenOllamaApiKeyIsConfigured() throws Exception {
+        AtomicReference<String> authorization = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+        server.createContext("/api/chat", exchange -> {
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            byte[] response = "{\"message\":{\"content\":\"{\\\"ok\\\":true}\"}}"
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            try (var output = exchange.getResponseBody()) {
+                output.write(response);
+            }
+        });
+        server.start();
+        try {
+            OllamaService authenticatedService = new OllamaService(
+                    "http://localhost:" + server.getAddress().getPort(),
+                    "test", "test", "secret-test-key", new ObjectMapper());
+
+            authenticatedService.matchResumeWithJob("resume", "job");
+
+            assertEquals("Bearer secret-test-key", authorization.get());
+        } finally {
+            server.stop(0);
+        }
+    }
 
     @Test
     void parsesJsonObjectWrappedInModelFormatting() {

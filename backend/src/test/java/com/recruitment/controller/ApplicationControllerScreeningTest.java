@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.recruitment.ai.OllamaService;
 import com.recruitment.entity.*;
 import com.recruitment.repository.*;
+import com.recruitment.service.FileStorageService;
 import com.recruitment.service.InterviewInvitationService;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,7 @@ class ApplicationControllerScreeningTest {
     private final ScreeningAi ai = new ScreeningAi();
     private final ApplicationController controller = new ApplicationController(
             applications, mock(CandidateRepository.class), jobs, mock(UserRepository.class),
-            invitations, ai);
+            invitations, ai, mock(FileStorageService.class));
 
     @Test
     void shortlistsAndNotifiesOnlyTheHighestScoringApplicant() {
@@ -81,7 +82,7 @@ class ApplicationControllerScreeningTest {
         private int[] scores = {58, 91};
 
         ScreeningAi() {
-            super("http://localhost:11434", "test", "test", new ObjectMapper());
+            super("http://localhost:11434", "test", "test", "", new ObjectMapper());
         }
 
         void setScores(int... values) {

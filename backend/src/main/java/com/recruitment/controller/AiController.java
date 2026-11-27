@@ -8,6 +8,7 @@ import com.recruitment.dto.ResumeAnalysisResponse;
 import com.recruitment.dto.ResumeImprovementResponse;
 import com.recruitment.entity.*;
 import com.recruitment.repository.*;
+import com.recruitment.service.FileStorageService;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -16,8 +17,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 
 @RestController @RequestMapping("/api/ai") @PreAuthorize("hasRole('CANDIDATE')")
@@ -26,18 +25,21 @@ public class AiController {
     private final UserRepository users; private final JobRepository jobs;
     private final ResumeAnalysisRepository analyses; private final JobMatchRepository matches;
     private final InterviewQuestionRepository interviewQuestions; private final ResumeImprovementRepository improvements;
+    private final FileStorageService fileStorage;
     public AiController(OllamaService ai,CandidateRepository candidates,UserRepository users,JobRepository jobs,
                        ResumeAnalysisRepository analyses,JobMatchRepository matches,
-                       InterviewQuestionRepository interviewQuestions,ResumeImprovementRepository improvements){
+                       InterviewQuestionRepository interviewQuestions,ResumeImprovementRepository improvements,
+                       FileStorageService fileStorage){
         this.ai=ai;this.candidates=candidates;this.users=users;this.jobs=jobs;this.analyses=analyses;
         this.matches=matches;this.interviewQuestions=interviewQuestions;this.improvements=improvements;
+        this.fileStorage=fileStorage;
     }
     private Candidate candidate(Authentication auth){return candidates.findByUser(users.findByEmail(auth.getName()).orElseThrow()).orElseThrow();}
     @PostMapping("/resume/analyze")
     public JsonNode analyze(@RequestParam(required=false) MultipartFile file,Authentication auth)throws Exception{
         Candidate c=candidate(auth); String text;
         if(file!=null){try(PDDocument doc=Loader.loadPDF(file.getBytes())){text=new PDFTextStripper().getText(doc);}
-        }else if(c.getResumePath()!=null){try(PDDocument doc=Loader.loadPDF(Files.readAllBytes(Path.of(c.getResumePath())))){text=new PDFTextStripper().getText(doc);}
+        }else if(c.getResumePath()!=null){try(PDDocument doc=Loader.loadPDF(fileStorage.read(c.getResumePath()))){text=new PDFTextStripper().getText(doc);}
         }else throw new IllegalArgumentException("Upload a PDF resume first");
         JsonNode result=ai.analyzeResume(text);
         ResumeAnalysis analysis=new ResumeAnalysis();
@@ -54,7 +56,7 @@ public class AiController {
     public JsonNode match(@PathVariable Long jobId,Authentication auth)throws Exception{
         Candidate c=candidate(auth); Job j=jobs.findById(jobId).orElseThrow();
         if(c.getResumePath()==null)throw new IllegalArgumentException("Upload a PDF resume first");
-        try(PDDocument doc=Loader.loadPDF(Files.readAllBytes(Path.of(c.getResumePath())))){
+        try(PDDocument doc=Loader.loadPDF(fileStorage.read(c.getResumePath()))){
             String text=new PDFTextStripper().getText(doc);
             JsonNode result=ai.matchResumeWithJob(text,j.getDescription());
             JobMatch match=new JobMatch();match.setCandidate(c);match.setJob(j);
@@ -70,7 +72,7 @@ public class AiController {
     public JsonNode improve(@RequestParam(required=false) Long jobId,Authentication auth)throws Exception{
         Candidate c=candidate(auth); if(c.getResumePath()==null)throw new IllegalArgumentException("Upload a PDF resume first");
         Job j=jobId==null?null:jobs.findById(jobId).orElse(null);
-        try(PDDocument doc=Loader.loadPDF(Files.readAllBytes(Path.of(c.getResumePath())))){
+        try(PDDocument doc=Loader.loadPDF(fileStorage.read(c.getResumePath()))){
             String text=new PDFTextStripper().getText(doc);
             JsonNode result=ai.improveResume(text,j==null?"General career improvement":j.getDescription());
             ResumeImprovement improvement=new ResumeImprovement();improvement.setCandidate(c);
@@ -120,7 +122,7 @@ public class AiController {
         return improvements.findByCandidateOrderByCreatedAtDesc(candidate(auth)).stream().map(ResumeImprovementResponse::from).toList();
     }
     private String extractResumeText(Candidate candidate)throws Exception{
-        try(PDDocument document=Loader.loadPDF(Files.readAllBytes(Path.of(candidate.getResumePath())))){
+        try(PDDocument document=Loader.loadPDF(fileStorage.read(candidate.getResumePath()))){
             return new PDFTextStripper().getText(document);
         }
     }

@@ -21,16 +21,19 @@ public class OllamaService {
     private final String baseUrl;
     private final String model;
     private final String interviewModel;
+    private final String apiKey;
     private final ObjectMapper mapper;
 
     public OllamaService(@Value("${app.ollama.base-url}") String baseUrl,
                          @Value("${app.ollama.model}") String model,
                          @Value("${app.ollama.interview-model}") String interviewModel,
+                         @Value("${app.ollama.api-key:}") String apiKey,
                          ObjectMapper mapper) {
         this.client = RestClient.create();
         this.baseUrl = baseUrl.replaceAll("/+$", "");
         this.model = model;
         this.interviewModel = interviewModel;
+        this.apiKey = apiKey;
         this.mapper = mapper;
     }
 
@@ -115,21 +118,23 @@ public class OllamaService {
                 "options", Map.of("num_predict", maxTokens == null ? 900 : maxTokens, "temperature", 0.2)));
         String response;
         try {
-            response = client.post()
+            var request = client.post()
                     .uri(baseUrl + "/api/chat")
-                    .body(body)
-                    .retrieve()
-                    .body(String.class);
+                    .body(body);
+            if (!apiKey.isBlank()) {
+                request.header("Authorization", "Bearer " + apiKey);
+            }
+            response = request.retrieve().body(String.class);
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().value() == 404) {
                 throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                        "Local model is not installed. Run: ollama pull "+modelName, e);
+                        "Ollama model is not available: "+modelName, e);
             }
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-                    "Local Ollama request failed (HTTP "+e.getStatusCode().value()+")", e);
+                    "Ollama request failed (HTTP "+e.getStatusCode().value()+")", e);
         } catch (ResourceAccessException e) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Local Ollama is not running at "+baseUrl, e);
+                    "Ollama is not reachable at "+baseUrl, e);
         }
 
         JsonNode root;
