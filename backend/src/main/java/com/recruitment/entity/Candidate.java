@@ -14,6 +14,8 @@ public class Candidate {
     private String resumePath;
     private String resumeFileName;
     private String photoPath;
+    private Double latitude;
+    private Double longitude;
     public Long getId(){return id;} public void setId(Long id){this.id=id;}
     public User getUser(){return user;} public void setUser(User user){this.user=user;}
     public String getPhone(){return phone;} public void setPhone(String phone){this.phone=phone;}
@@ -26,4 +28,6 @@ public class Candidate {
     public String getResumePath(){return resumePath;} public void setResumePath(String resumePath){this.resumePath=resumePath;}
     public String getResumeFileName(){return resumeFileName;} public void setResumeFileName(String resumeFileName){this.resumeFileName=resumeFileName;}
     public String getPhotoPath(){return photoPath;} public void setPhotoPath(String photoPath){this.photoPath=photoPath;}
+    public Double getLatitude(){return latitude;} public void setLatitude(Double latitude){this.latitude=latitude;}
+    public Double getLongitude(){return longitude;} public void setLongitude(Double longitude){this.longitude=longitude;}
 }

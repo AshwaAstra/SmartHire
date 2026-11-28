@@ -308,6 +308,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
   const [analysis, setAnalysis] = useState(null);
   const [analysisHistory, setAnalysisHistory] = useState([]);
   const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(false);
   const [match, setMatch] = useState(null);
   const [matchHistory, setMatchHistory] = useState([]);
   const [questions, setQuestions] = useState(null);
@@ -417,7 +418,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
   }, [profile?.photoPath]);
 
   const logout = () => { localStorage.clear(); window.location.href = '/'; };
-  const jobOptions = jobs.map((job) => <option value={job.id} key={job.id}>{job.title}</option>);
+  const jobOptions = [...jobs].sort((a,b)=>new Date(b.createdAt || 0)-new Date(a.createdAt || 0)).map((job) => <option value={job.id} key={job.id}>{job.title} · {job.companyName || 'Company'}{job.location ? ` · ${job.location}` : ''}</option>);
   const visibleJobs = jobs.filter((job) => `${job.title} ${job.location || ''} ${job.requiredSkills || ''}`
     .toLowerCase().includes(search.toLowerCase()));
   const profileChecklist = [
@@ -445,6 +446,25 @@ function CandidateWorkspace({ initialView = 'overview' }) {
       const saved = await api('/api/candidates/profile', { method: 'PUT', body: JSON.stringify(profileForm) });
       setProfile(saved); setProfileForm(saved); showMessage('Profile saved successfully.');
     } catch (e) { showError(e.message); } finally { setBusy(false); }
+  }
+
+  function useCurrentLocation() {
+    if (!navigator.geolocation) { showError('Location is not supported by this browser.'); return; }
+    setLocationLoading(true); setError('');
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${coords.latitude}&lon=${coords.longitude}`);
+        const place = response.ok ? await response.json() : null;
+        const address = place?.address || {};
+        const location = [address.city || address.town || address.village || address.county, address.state, address.country].filter(Boolean).join(', ') || `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
+        setProfileForm(current => ({ ...current, location, latitude: coords.latitude, longitude: coords.longitude }));
+        showMessage('Current location added. Save your profile to keep it.');
+      } catch { showError('Could not find the address for your current location.'); }
+      finally { setLocationLoading(false); }
+    }, error => {
+      setLocationLoading(false);
+      showError(error.code === 1 ? 'Allow location access in your browser, then try again.' : 'Could not get your current location.');
+    }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
   }
 
   async function uploadPhoto(event) {
@@ -737,7 +757,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
         <button className="signout-button" onClick={logout}>Sign out</button>
       </aside>
       <section className="dashboard-main candidate-main">
-        <header><div><p>Candidate workspace</p><h1>{menu.find(([key]) => key === view)?.[1] || 'Interview history'}</h1></div><div className={`avatar${profilePhotoUrl ? ' has-photo' : ''}`}>{profilePhotoUrl ? <img src={profilePhotoUrl} alt={`${profile?.name || 'Candidate'} profile`} /> : (profile?.name?.[0] || user.name?.[0] || 'C')}</div></header>
+        <header><div><p>Candidate workspace</p><h1>{menu.find(([key]) => key === view)?.[1] || 'Interview history'}</h1></div><button type="button" className={`avatar profile-avatar-button${profilePhotoUrl ? ' has-photo' : ''}`} aria-label="Open my profile" title="Open my profile" onClick={()=>setView('profile')}>{profilePhotoUrl ? <img src={profilePhotoUrl} alt={`${profile?.name || 'Candidate'} profile`} /> : (profile?.name?.[0] || user.name?.[0] || 'C')}</button></header>
         {error && <div className="notice error-notice" role="alert">{error}</div>}
         {notice && <div className="notice success-notice" role="status">{notice}</div>}
 
@@ -812,7 +832,8 @@ function CandidateWorkspace({ initialView = 'overview' }) {
             <label>Full name<input required value={profileForm.name || ''} onChange={e=>setProfileForm({...profileForm,name:e.target.value})} /></label>
             <label>Email<input value={profileForm.email || ''} disabled /></label>
             <label>Phone<input value={profileForm.phone || ''} onChange={e=>setProfileForm({...profileForm,phone:e.target.value})} /></label>
-            <label>Location<input value={profileForm.location || ''} onChange={e=>setProfileForm({...profileForm,location:e.target.value})} /></label>
+            <label>Location<input value={profileForm.location || ''} onChange={e=>setProfileForm({...profileForm,location:e.target.value})} />{profileForm.latitude != null && profileForm.longitude != null && <a className="location-map-link" href={`https://www.openstreetmap.org/?mlat=${profileForm.latitude}&mlon=${profileForm.longitude}#map=15/${profileForm.latitude}/${profileForm.longitude}`} target="_blank" rel="noreferrer">View saved pin on map</a>}</label>
+            <div className="location-action-field"><span>Location services</span><button type="button" className="secondary-button compact-button" onClick={useCurrentLocation} disabled={locationLoading}>{locationLoading ? 'Finding location…' : 'Use my current location'}</button><small>Your browser asks permission before sharing your location.</small></div>
             <label>Education<input value={profileForm.education || ''} onChange={e=>setProfileForm({...profileForm,education:e.target.value})} /></label>
             <label>Graduation year<input type="number" value={profileForm.graduationYear || ''} onChange={e=>setProfileForm({...profileForm,graduationYear:e.target.value ? Number(e.target.value) : null})} /></label>
             <label className="full-width">Skills<input value={profileForm.skills || ''} onChange={e=>setProfileForm({...profileForm,skills:e.target.value})} placeholder="Java, React, SQL" /></label>
@@ -856,7 +877,10 @@ function CandidateWorkspace({ initialView = 'overview' }) {
 
         {view === 'matching' && <section className="panel">
           <div className="section-heading"><div><p className="eyebrow">PERSONALIZED FOR YOU</p><h2>Find your best-fit role</h2><p className="muted-copy">Compare your resume with a role and see where you stand.</p></div></div>
-          <form className="inline-form" onSubmit={findMatch}><select required value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)}><option value="">Select a job</option>{jobOptions}</select><button className="primary-button compact-button" disabled={busy || !profile?.resumePath}>{busy ? 'Matching…' : 'Find my match'}</button></form>
+          <p className="muted-copy">Showing active company openings available right now, sorted by most recently posted.</p>
+          <form className="inline-form" onSubmit={findMatch}><select required value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)}><option value="">Select a company role</option>{jobOptions}</select><button className="primary-button compact-button" disabled={busy || !profile?.resumePath || !jobs.length}>{busy ? 'Matching…' : 'Find my match'}</button></form>
+          <div className="match-company-list">{jobs.slice(0,6).map(job=><article key={job.id}><div><strong>{job.title}</strong><span>{job.companyName || 'Company'}{job.location ? ` · ${job.location}` : ''}</span></div><small>{job.createdAt ? `Posted ${new Date(job.createdAt).toLocaleDateString()}` : job.employmentType || 'Open role'}</small></article>)}</div>
+          {!jobs.length && <p className="empty-state">No active company jobs are available yet. Check back after recruiters publish openings.</p>}
           {!profile?.resumePath && <p className="empty-state">Upload a resume before matching with a job.</p>}
           {match && <JobMatchResult data={match} job={jobs.find((job) => String(job.id) === String(selectedJobId))} onApply={() => {
             const job = jobs.find((item) => String(item.id) === String(selectedJobId));
@@ -892,7 +916,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
             <p className="muted-copy">Choose a clean Overleaf-ready layout. AI will place facts from your uploaded resume into the selected style.</p>
             <div className="inline-form"><select aria-label="Resume template" value={latexTemplate} onChange={e=>setLatexTemplate(e.target.value)}><option value="classic">Classic professional</option><option value="modern">Modern single-column</option><option value="compact">Compact ATS one-page</option></select><button type="button" className="primary-button compact-button" disabled={busy || !profile?.resumePath} onClick={generateLatexResume}>{busy ? 'Creating…' : 'Create LaTeX resume'}</button></div>
           </div>
-          {latexResume?.latex && <section className="latex-result"><div className="section-heading"><div><h3>Editable LaTeX source</h3><p className="muted-copy">Copy this code into a new Overleaf project, or edit it here first.</p></div><button type="button" className="secondary-button compact-button" onClick={()=>navigator.clipboard.writeText(latexResume.latex)}>Copy LaTeX</button></div><textarea aria-label="Editable LaTeX source" value={latexResume.latex} onChange={e=>setLatexResume({...latexResume,latex:e.target.value})} rows="20" spellCheck="false" />{latexResume.improvements && <JsonResult data={{ improvements: latexResume.improvements }} />}</section>}
+          {latexResume?.latex && <LatexResumeEditor latexResume={latexResume} setLatexResume={setLatexResume} template={latexTemplate} />}
           {!!improvementHistory.length && <div className="history-section"><h3>Previous improvement suggestions</h3>{improvementHistory.slice(0,5).map((item)=><details className="history-card" key={item.id}><summary>{new Date(item.createdAt).toLocaleString()}</summary><h4>Original resume content</h4><pre>{item.originalContent}</pre><h4>Suggested version</h4><pre>{item.improvedContent || 'No formatted suggestions were saved for this older result. Run Suggest improvements again.'}</pre></details>)}</div>}
         </section>}
 
@@ -1101,6 +1125,34 @@ function ResumeAnalysisDashboard({ data }) {
       <article><h4>Improvements</h4><StructuredResultValue value={improvements}/></article>
       <article><h4>Skills found</h4><StructuredResultValue value={data.technicalSkills ?? data.skills} skillMode/></article>
     </div>
+  </section>;
+}
+
+function LatexResumeEditor({ latexResume, setLatexResume, template }) {
+  const [saved, setSaved] = useState(false);
+
+  function saveSource() {
+    localStorage.setItem('smarthire_latex_resume', JSON.stringify({ template, latex: latexResume.latex, savedAt: new Date().toISOString() }));
+    setSaved(true); setTimeout(() => setSaved(false), 2500);
+  }
+
+  function downloadSource() {
+    const url = URL.createObjectURL(new Blob([latexResume.latex], { type: 'application/x-tex;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'resume.tex'; link.click(); URL.revokeObjectURL(url);
+  }
+
+  return <section className="latex-result">
+    <div className="latex-editor-toolbar"><div><span className="latex-live-dot" /> OVERLEAF STYLE EDITOR <span className="latex-template-tag">{template}</span></div><div className="latex-editor-actions">
+      <button type="button" className="secondary-button compact-button" onClick={()=>navigator.clipboard.writeText(latexResume.latex)}>Copy code</button>
+      <button type="button" className="secondary-button compact-button" onClick={downloadSource}>Download .tex</button>
+      <button type="button" className="primary-button compact-button" onClick={saveSource}>{saved ? 'Saved' : 'Save edits'}</button>
+      <a className="secondary-button compact-button latex-overleaf-link" href="https://www.overleaf.com/project" target="_blank" rel="noreferrer">Open Overleaf</a>
+    </div></div>
+    <div className="latex-workspace">
+      <div className="latex-code-pane"><div className="latex-pane-title"><span>resume.tex</span><span>Editing source</span></div><textarea aria-label="Editable LaTeX source" value={latexResume.latex} onChange={e=>setLatexResume({...latexResume,latex:e.target.value})} spellCheck="false" /></div>
+      <div className="latex-preview-pane"><div className="latex-pane-title"><span>PDF Preview</span><span>Private preview</span></div><div className="latex-preview-message">Your resume source stays in this app. Download the .tex file and open it in Overleaf to compile and preview the PDF.</div></div>
+    </div>
+    {latexResume.improvements && <JsonResult data={{ improvements: latexResume.improvements }} />}
   </section>;
 }
 

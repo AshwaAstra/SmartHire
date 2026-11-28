@@ -41,7 +41,7 @@ public class CandidateController {
         Candidate c=current(authentication);
         return new CandidateProfile(user.getName(), user.getEmail(), c.getPhone(), c.getLocation(),
                 c.getEducation(), c.getGraduationYear(), c.getSkills(), c.getExperience(),
-                c.getProfessionalSummary(), c.getResumePath(), c.getPhotoPath(), c.getResumeFileName());
+                c.getProfessionalSummary(), c.getResumePath(), c.getPhotoPath(), c.getResumeFileName(), c.getLatitude(), c.getLongitude());
     }
 
     @PutMapping("/profile")
@@ -52,8 +52,17 @@ public class CandidateController {
         c.setPhone(request.phone()); c.setLocation(request.location()); c.setEducation(request.education());
         c.setGraduationYear(request.graduationYear()); c.setSkills(request.skills());
         c.setExperience(request.experience()); c.setProfessionalSummary(request.professionalSummary());
+        c.setLatitude(request.latitude()); c.setLongitude(request.longitude());
         c=candidates.save(c);
         return profile(authentication);
+    }
+
+    @GetMapping("/location")
+    public java.util.Map<String,Object> location(Authentication authentication) {
+        Candidate candidate=current(authentication);
+        if(candidate.getLatitude()==null||candidate.getLongitude()==null)
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND,"Save your current location in your profile first");
+        return java.util.Map.of("latitude",candidate.getLatitude(),"longitude",candidate.getLongitude(),"location",candidate.getLocation()==null?"":candidate.getLocation());
     }
 
     @PostMapping(value="/resume", consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
