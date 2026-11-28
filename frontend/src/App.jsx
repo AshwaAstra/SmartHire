@@ -1,6 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
-import { api } from './api';
+import { api, API_URL } from './api';
+import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+
+async function photoResponse(response) {
+  if (response.status === 404) return null;
+  if (response.ok) return response.blob();
+  let message = 'Could not load the profile photo.';
+  try {
+    const body = await response.json();
+    message = body.error || body.message || message;
+  } catch {}
+  if (response.status === 401) {
+    localStorage.removeItem('smarthire_token');
+    localStorage.removeItem('smarthire_user');
+    window.location.assign('/login?reason=session-expired');
+  }
+  throw new Error(message);
+}
 
 function Landing() {
   return (
@@ -89,6 +106,8 @@ function RecruiterProfilePage() {
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [notice, setNotice] = useState('');
+  const [photoUrl, setPhotoUrl] = useState('');
+  const photoInputRef = useRef(null);
 
   useEffect(() => {
     api('/api/recruiters/profile')
@@ -96,6 +115,30 @@ function RecruiterProfilePage() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!profile.photoPath) { setPhotoUrl(''); return; }
+    let active = true;
+    let objectUrl = '';
+    fetch(`${API_URL}/api/recruiters/photo`, { headers: { Authorization: `Bearer ${localStorage.getItem('smarthire_token')}` } })
+      .then(photoResponse)
+      .then(blob => { if (!blob) { if (active) setPhotoUrl(''); return; } objectUrl = URL.createObjectURL(blob); if (active) setPhotoUrl(objectUrl); })
+      .catch(() => { if (active) setPhotoUrl(''); });
+    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [profile.photoPath]);
+
+  async function uploadPhoto(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { setError('Profile photos must be 5 MB or smaller.'); return; }
+    setSaving(true); setError(''); setNotice('');
+    try {
+      const data = new FormData(); data.append('file', file);
+      setProfile(await api('/api/recruiters/photo', { method: 'POST', body: data }));
+      setNotice('Profile photo updated.');
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); event.target.value = ''; }
+  }
 
   async function saveProfile(event) {
     event.preventDefault();
@@ -129,21 +172,27 @@ function RecruiterProfilePage() {
         <Link to="/recruiter">Overview</Link>
         <Link to="/recruiter/jobs">Manage jobs</Link>
         <Link to="/recruiter/jobs">Post a job</Link>
-        <Link className="active" to="/recruiter/profile">Company profile</Link>
+        <Link className="active" to="/recruiter/profile">My profile</Link>
+        <Link to="/account/password">Change password</Link>
       </nav>
       <div className="sidebar-account"><span>Signed in as</span><strong>{user.name || user.email || 'Recruiter'}</strong><small>Recruiter</small></div>
       <button className="signout-button" onClick={logout}>Sign out</button>
     </aside>
     <section className="dashboard-main recruiter-main">
-      <header><div><p>Recruiter workspace</p><h1>Company profile</h1></div><div className="avatar">{user.name?.[0] || 'R'}</div></header>
+      <header><div><p>Recruiter workspace</p><h1>My profile</h1></div><div className={`avatar${photoUrl ? ' has-photo' : ''}`}>{photoUrl ? <img src={photoUrl} alt="Recruiter profile" /> : (user.name?.[0] || 'R')}</div></header>
       {error && <div className="notice error-notice" role="alert">{error}</div>}
       {notice && <div className="notice success-notice" role="status">{notice}</div>}
       <form className="panel job-form" onSubmit={saveProfile}>
         <h2>Recruiter and company details</h2>
+        {!loading && <div className="profile-photo-card">
+          <div className="profile-photo-preview">{photoUrl ? <img src={photoUrl} alt="Recruiter profile" /> : <span>{profile.name?.[0] || user.name?.[0] || 'R'}</span>}</div>
+          <div className="profile-photo-copy"><h3>Profile photo</h3><p>Upload a JPEG or PNG image up to 5 MB. It is stored securely in Cloudinary.</p><button type="button" className="secondary-button compact-button" onClick={() => photoInputRef.current?.click()} disabled={saving}>{saving ? 'Uploading…' : profile.photoPath ? 'Change photo' : 'Upload photo'}</button><input ref={photoInputRef} className="profile-photo-input" type="file" accept="image/jpeg,image/png" onChange={uploadPhoto} /></div>
+        </div>}
         {loading ? <p className="muted-copy">Loading your company profile…</p> : <>
           <div className="form-grid">
             <label>Your name<input value={profile.name || ''} onChange={e=>setProfile({...profile,name:e.target.value})} required /></label>
             <label>Account email<input value={profile.email || ''} readOnly /></label>
+            <label>Phone number<input type="tel" value={profile.phone || ''} onChange={e=>setProfile({...profile,phone:e.target.value})} placeholder="e.g. +91 98765 43210" /></label>
             <label>Company name<input value={profile.companyName || ''} onChange={e=>setProfile({...profile,companyName:e.target.value})} maxLength="150" required /></label>
             <label>Company location<input value={profile.companyLocation || ''} onChange={e=>setProfile({...profile,companyLocation:e.target.value})} /></label>
             <label>Company website<input type="url" value={profile.companyWebsite || ''} onChange={e=>setProfile({...profile,companyWebsite:e.target.value})} placeholder="https://example.com" /></label>
@@ -176,15 +225,21 @@ function AuthPage({ mode }) {
       : '';
   const submit = async (event) => {
     event.preventDefault(); setBusy(true); setError('');
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 30000);
     try {
       const data = await api(`/api/auth/${mode}`, {
         method: 'POST',
-        body: JSON.stringify(mode === 'register' ? form : { email: form.email, password: form.password })
+        body: JSON.stringify(mode === 'register' ? form : { email: form.email, password: form.password }),
+        signal: controller.signal
       });
       localStorage.setItem('smarthire_token', data.token);
       localStorage.setItem('smarthire_user', JSON.stringify(data));
       navigate(data.role === 'CANDIDATE' ? '/candidate' : data.role === 'RECRUITER' ? '/recruiter' : '/admin');
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
+    } catch (e) { setError(e.message); } finally {
+      window.clearTimeout(timeoutId);
+      setBusy(false);
+    }
   };
   const isLogin = mode === 'login';
   return <main className="auth-page">
@@ -198,17 +253,101 @@ function AuthPage({ mode }) {
         {!isLogin && form.role === 'RECRUITER' && <label>Company name<input autoComplete="organization" placeholder="Your company or organization" value={form.companyName} onChange={e=>setForm({...form,companyName:e.target.value})} maxLength="150" required /></label>}
         <label>Email address<input autoComplete="email" type="email" placeholder="you@example.com" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} required /></label>
         <label>Password<div className="auth-password-field"><input autoComplete={isLogin ? 'current-password' : 'new-password'} type={showPassword ? 'text' : 'password'} placeholder="Enter your password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} required /><button type="button" onClick={()=>setShowPassword((visible)=>!visible)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? 'Hide' : 'Show'}</button></div></label>
+        {isLogin && <div className="auth-forgot-link"><Link to="/forgot-password">Forgot password?</Link></div>}
         {!isLogin && <fieldset className="auth-role-field"><legend>I'm joining as</legend><div className="auth-role-options">
           <button type="button" className={form.role === 'CANDIDATE' ? 'auth-role-option selected' : 'auth-role-option'} aria-pressed={form.role === 'CANDIDATE'} onClick={()=>setForm({...form,role:'CANDIDATE'})}><span className="auth-role-icon candidate-role-icon">C</span><span><strong>Candidate</strong><small>Find roles and prepare</small></span><i aria-hidden="true">{form.role === 'CANDIDATE' ? '✓' : ''}</i></button>
           <button type="button" className={form.role === 'RECRUITER' ? 'auth-role-option selected' : 'auth-role-option'} aria-pressed={form.role === 'RECRUITER'} onClick={()=>setForm({...form,role:'RECRUITER'})}><span className="auth-role-icon recruiter-role-icon">R</span><span><strong>Recruiter</strong><small>Post jobs and hire</small></span><i aria-hidden="true">{form.role === 'RECRUITER' ? '✓' : ''}</i></button>
         </div></fieldset>}
         {error && <p className="form-error" role="alert">{error}</p>}
-        <button className="primary-button auth-submit" disabled={busy}>{busy ? 'Please wait…' : isLogin ? 'Sign in' : 'Create account'}<span aria-hidden="true">→</span></button>
+        <button className="primary-button auth-submit" disabled={busy} aria-busy={busy}>{busy && <span className="auth-submit-spinner" aria-hidden="true" />}{busy ? (isLogin ? 'Signing in…' : 'Creating account…') : isLogin ? 'Sign in' : 'Create account'}{!busy && <span aria-hidden="true">→</span>}</button>
         <p className="auth-switch">{isLogin ? 'New to SmartHire?' : 'Already have an account?'} <Link to={isLogin ? '/register' : '/login'}>{isLogin ? 'Create an account' : 'Sign in'}</Link></p>
       </form>
     </section>
     <footer className="auth-footer"><Link to="/">← Back to SmartHire</Link><span>Your next step, made clearer.</span></footer>
   </main>;
+}
+
+function ForgotPasswordPage() {
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  async function submit(event) {
+    event.preventDefault(); setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await api('/api/auth/password-reset/request', { method: 'POST', body: JSON.stringify({ email }) });
+      setNotice(result.message);
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+  return <main className="auth-page"><Link className="auth-brand landing-brand" to="/"><span className="brand-symbol">S</span>SmartHire</Link><form className="auth-card password-card" onSubmit={submit}>
+    <p className="eyebrow">ACCOUNT RECOVERY</p><h1>Forgot password?</h1><p>Enter your account email. If email delivery is configured, we’ll send you a short-lived, one-time reset link.</p>
+    <label>Email address<input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} required /></label>
+    {error && <p className="form-error" role="alert">{error}</p>}{notice && <p className="notice success-notice" role="status">{notice}</p>}
+    <button className="primary-button auth-submit" disabled={busy}>{busy ? 'Sending…' : 'Send reset link'}</button><p className="auth-switch"><Link to="/login">Back to sign in</Link></p>
+  </form></main>;
+}
+
+function ResetPasswordPage() {
+  const navigate = useNavigate();
+  const token = new URLSearchParams(window.location.search).get('token') || '';
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  async function submit(event) {
+    event.preventDefault(); setError('');
+    if (newPassword !== confirmPassword) { setError('New password and confirmation do not match.'); return; }
+    setBusy(true);
+    try {
+      const result = await api('/api/auth/password-reset/confirm', { method: 'POST', body: JSON.stringify({ token, newPassword, confirmPassword }) });
+      setNotice(result.message); setTimeout(() => navigate('/login'), 1400);
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+  return <main className="auth-page"><Link className="auth-brand landing-brand" to="/"><span className="brand-symbol">S</span>SmartHire</Link><form className="auth-card password-card" onSubmit={submit}>
+    <p className="eyebrow">SECURE ACCOUNT</p><h1>Set a new password</h1><p>Use at least 12 characters. This reset link works once and expires after 15 minutes.</p>
+    <label>New password<input type="password" autoComplete="new-password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} minLength="12" maxLength="72" required /></label>
+    <label>Confirm new password<input type="password" autoComplete="new-password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} minLength="12" maxLength="72" required /></label>
+    {error && <p className="form-error" role="alert">{error}</p>}{notice && <p className="notice success-notice" role="status">{notice}</p>}
+    <button className="primary-button auth-submit" disabled={busy || !token}>{busy ? 'Updating…' : 'Change password'}</button>{!token && <p className="form-error">This reset link is missing. Request a new one from the sign-in page.</p>}
+  </form></main>;
+}
+
+function ChangePasswordPage() {
+  const navigate = useNavigate();
+  const user = JSON.parse(localStorage.getItem('smarthire_user') || 'null');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  async function submit(event) {
+    event.preventDefault(); setError(''); setNotice('');
+    if (newPassword !== confirmPassword) { setError('New password and confirmation do not match.'); return; }
+    if (newPassword === currentPassword) { setError('Choose a new password different from your current one.'); return; }
+    setBusy(true);
+    try {
+      const result = await api('/api/account/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword, confirmPassword }) });
+      localStorage.setItem('smarthire_token', result.token);
+      localStorage.setItem('smarthire_user', JSON.stringify(result));
+      setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
+      setNotice('Password changed. This device stays signed in; other sessions must sign in again.');
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+  if (!user || !localStorage.getItem('smarthire_token')) return <Navigate to="/login" replace />;
+  return <main className="auth-page"><Link className="auth-brand landing-brand" to="/"><span className="brand-symbol">S</span>SmartHire</Link><form className="auth-card password-card" onSubmit={submit}>
+    <p className="eyebrow">ACCOUNT SECURITY</p><h1>Change password</h1><p>Verify your current password, then choose a new one with at least 12 characters.</p>
+    <label>Current password<input type="password" autoComplete="current-password" value={currentPassword} onChange={e=>setCurrentPassword(e.target.value)} required /></label>
+    <label>New password<input type="password" autoComplete="new-password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} minLength="12" maxLength="72" required /></label>
+    <label>Confirm new password<input type="password" autoComplete="new-password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} minLength="12" maxLength="72" required /></label>
+    {error && <p className="form-error" role="alert">{error}</p>}{notice && <p className="notice success-notice" role="status">{notice}</p>}
+    <button className="primary-button auth-submit" disabled={busy}>{busy ? 'Updating…' : 'Update password'}</button>
+    <p className="auth-switch"><Link to={user.role === 'CANDIDATE' ? '/candidate' : user.role === 'RECRUITER' ? '/recruiter' : '/admin'}>Back to workspace</Link></p>
+  </form></main>;
 }
 
 function Dashboard({ role }) {
@@ -263,6 +402,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
   const [search, setSearch] = useState('');
   const [selectedJobId, setSelectedJobId] = useState('');
   const [resumeFile, setResumeFile] = useState(null);
+  const [resumeFileName, setResumeFileName] = useState('');
   const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
   const photoInputRef = useRef(null);
   const [applyJob, setApplyJob] = useState(null);
@@ -270,11 +410,15 @@ function CandidateWorkspace({ initialView = 'overview' }) {
   const [coverLetter, setCoverLetter] = useState('');
   const [analysis, setAnalysis] = useState(null);
   const [analysisHistory, setAnalysisHistory] = useState([]);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(false);
   const [match, setMatch] = useState(null);
   const [matchHistory, setMatchHistory] = useState([]);
   const [questions, setQuestions] = useState(null);
   const [questionHistory, setQuestionHistory] = useState([]);
   const [improvement, setImprovement] = useState(null);
+  const [latexResume, setLatexResume] = useState(null);
+  const [latexTemplate, setLatexTemplate] = useState('classic');
   const [improvementHistory, setImprovementHistory] = useState([]);
   const [mockConfig, setMockConfig] = useState({ jobId: '', category: 'Mixed', difficulty: 'Intermediate', totalQuestions: 5, interviewType: 'TEXT' });
   const [mockInterview, setMockInterview] = useState(null);
@@ -342,6 +486,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
     ]).then(([candidateProfile, availableJobs, myApplications, analytics]) => {
       setProfile(candidateProfile);
       setProfileForm(candidateProfile);
+      setResumeFileName(candidateProfile.resumeFileName || '');
       setJobs(availableJobs);
       setApplications(myApplications);
       setStats(analytics);
@@ -356,19 +501,24 @@ function CandidateWorkspace({ initialView = 'overview' }) {
     let active = true;
     let objectUrl;
     setProfilePhotoUrl('');
-    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8081'}/api/candidates/photo`, {
+    fetch(`${API_URL}/api/candidates/photo`, {
       headers: { Authorization: `Bearer ${localStorage.getItem('smarthire_token')}` }
     })
-      .then((response) => {
-        if (!response.ok) throw new Error('Could not load the profile photo.');
-        return response.blob();
-      })
+      .then(photoResponse)
       .then((blob) => {
+        if (!blob) {
+          if (active) {
+            setProfilePhotoUrl('');
+            setProfile((current) => current ? { ...current, photoPath: null } : current);
+            setProfileForm((current) => ({ ...current, photoPath: null }));
+          }
+          return;
+        }
         objectUrl = URL.createObjectURL(blob);
         if (active) setProfilePhotoUrl(objectUrl);
         else URL.revokeObjectURL(objectUrl);
       })
-      .catch((e) => { if (active) showError(e.message); });
+      .catch(() => { if (active) setProfilePhotoUrl(''); });
     return () => {
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -376,7 +526,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
   }, [profile?.photoPath]);
 
   const logout = () => { localStorage.clear(); window.location.href = '/'; };
-  const jobOptions = jobs.map((job) => <option value={job.id} key={job.id}>{job.title}</option>);
+  const jobOptions = [...jobs].sort((a,b)=>new Date(b.createdAt || 0)-new Date(a.createdAt || 0)).map((job) => <option value={job.id} key={job.id}>{job.title} · {job.companyName || 'Company'}{job.location ? ` · ${job.location}` : ''}</option>);
   const visibleJobs = jobs.filter((job) => `${job.title} ${job.location || ''} ${job.requiredSkills || ''}`
     .toLowerCase().includes(search.toLowerCase()));
   const profileChecklist = [
@@ -404,6 +554,25 @@ function CandidateWorkspace({ initialView = 'overview' }) {
       const saved = await api('/api/candidates/profile', { method: 'PUT', body: JSON.stringify(profileForm) });
       setProfile(saved); setProfileForm(saved); showMessage('Profile saved successfully.');
     } catch (e) { showError(e.message); } finally { setBusy(false); }
+  }
+
+  function useCurrentLocation() {
+    if (!navigator.geolocation) { showError('Location is not supported by this browser.'); return; }
+    setLocationLoading(true); setError('');
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${coords.latitude}&lon=${coords.longitude}`);
+        const place = response.ok ? await response.json() : null;
+        const address = place?.address || {};
+        const location = [address.city || address.town || address.village || address.county, address.state, address.country].filter(Boolean).join(', ') || `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
+        setProfileForm(current => ({ ...current, location, latitude: coords.latitude, longitude: coords.longitude }));
+        showMessage('Current location added. Save your profile to keep it.');
+      } catch { showError('Could not find the address for your current location.'); }
+      finally { setLocationLoading(false); }
+    }, error => {
+      setLocationLoading(false);
+      showError(error.code === 1 ? 'Allow location access in your browser, then try again.' : 'Could not get your current location.');
+    }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
   }
 
   async function uploadPhoto(event) {
@@ -437,15 +606,27 @@ function CandidateWorkspace({ initialView = 'overview' }) {
     const data = new FormData(); data.append('file', resumeFile); setBusy(true);
     try {
       const updatedProfile = await api('/api/candidates/resume', { method: 'POST', body: data });
-      setProfile(updatedProfile); setProfileForm(updatedProfile); setResumeFile(null);
-      event.target.reset(); showMessage('Resume uploaded successfully.');
+      setProfile(updatedProfile); setProfileForm(updatedProfile); setResumeFile(null); setResumeFileName(updatedProfile.resumeFileName || resumeFile.name);
+      setAnalysis(null); setNotice('Resume uploaded. AI is analyzing it now…'); setError('');
+      event.target.reset();
+      setAnalysisLoading(true);
+      const result = await api('/api/ai/resume/analyze', { method: 'POST' });
+      setAnalysis(result);
+      setAnalysisHistory(await api('/api/ai/resume/analyses'));
+      showMessage('Resume uploaded and analyzed successfully.');
     } catch (e) { showError(e.message); } finally { setBusy(false); }
+    setAnalysisLoading(false);
   }
 
   async function analyzeResume() {
-    setBusy(true);
-    try { setAnalysis(await api('/api/ai/resume/analyze', { method: 'POST' })); setAnalysisHistory(await api('/api/ai/resume/analyses')); setView('resume'); }
-    catch (e) { showError(e.message); } finally { setBusy(false); }
+    if (analysisLoading) return;
+    setBusy(true); setAnalysisLoading(true);
+    try {
+      const result = await api('/api/ai/resume/analyze', { method: 'POST' });
+      setAnalysis(result);
+      setAnalysisHistory(await api('/api/ai/resume/analyses'));
+      setView('resume');
+    } catch (e) { showError(e.message); } finally { setBusy(false); setAnalysisLoading(false); }
   }
 
   async function submitApplication() {
@@ -485,6 +666,15 @@ function CandidateWorkspace({ initialView = 'overview' }) {
     const params = selectedJobId ? `?jobId=${selectedJobId}` : '';
     try { setImprovement(await api(`/api/ai/resume/improve${params}`, { method: 'POST' })); setImprovementHistory(await api('/api/ai/resume/improvements')); }
     catch (e) { showError(e.message); } finally { setBusy(false); }
+  }
+
+  async function generateLatexResume() {
+    setBusy(true);
+    try {
+      const params = new URLSearchParams({ template: latexTemplate, ...(selectedJobId ? { jobId: selectedJobId } : {}) });
+      setLatexResume(await api(`/api/ai/resume/latex?${params}`, { method: 'POST' }));
+    } catch (e) { showError(e.message); }
+    finally { setBusy(false); }
   }
 
   async function startMockInterview(event) {
@@ -638,7 +828,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
 
   async function openResume() {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8081'}/api/candidates/resume`, {
+      const response = await fetch(`${API_URL}/api/candidates/resume`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('smarthire_token')}` }
       });
       if (!response.ok) throw new Error('Could not open the uploaded resume.');
@@ -648,7 +838,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
 
   async function downloadApplicationResume(application) {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8081'}/api/applications/${application.id}/resume`, {
+      const response = await fetch(`${API_URL}/api/applications/${application.id}/resume`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('smarthire_token')}` }
       });
       if (!response.ok) throw new Error('Could not download this resume.');
@@ -670,12 +860,13 @@ function CandidateWorkspace({ initialView = 'overview' }) {
         <strong className="brand">SmartHire</strong>
         <nav>{menu.map(([key, label]) => <button key={key} className={view === key ? 'active' : ''} onClick={() => { setView(key); setError(''); }}>{label}</button>)}
           <button onClick={loadInterviewHistory}>Interview history</button>
+          <Link to="/account/password">Change password</Link>
         </nav>
         <div className="sidebar-account"><span>Signed in as</span><strong>{user.name || user.email || 'Candidate'}</strong><small>Candidate</small></div>
         <button className="signout-button" onClick={logout}>Sign out</button>
       </aside>
       <section className="dashboard-main candidate-main">
-        <header><div><p>Candidate workspace</p><h1>{menu.find(([key]) => key === view)?.[1] || 'Interview history'}</h1></div><div className={`avatar${profilePhotoUrl ? ' has-photo' : ''}`}>{profilePhotoUrl ? <img src={profilePhotoUrl} alt={`${profile?.name || 'Candidate'} profile`} /> : (profile?.name?.[0] || user.name?.[0] || 'C')}</div></header>
+        <header><div><p>Candidate workspace</p><h1>{menu.find(([key]) => key === view)?.[1] || 'Interview history'}</h1></div><button type="button" className={`avatar profile-avatar-button${profilePhotoUrl ? ' has-photo' : ''}`} aria-label="Open my profile" title="Open my profile" onClick={()=>setView('profile')}>{profilePhotoUrl ? <img src={profilePhotoUrl} alt={`${profile?.name || 'Candidate'} profile`} /> : (profile?.name?.[0] || user.name?.[0] || 'C')}</button></header>
         {error && <div className="notice error-notice" role="alert">{error}</div>}
         {notice && <div className="notice success-notice" role="status">{notice}</div>}
 
@@ -750,7 +941,8 @@ function CandidateWorkspace({ initialView = 'overview' }) {
             <label>Full name<input required value={profileForm.name || ''} onChange={e=>setProfileForm({...profileForm,name:e.target.value})} /></label>
             <label>Email<input value={profileForm.email || ''} disabled /></label>
             <label>Phone<input value={profileForm.phone || ''} onChange={e=>setProfileForm({...profileForm,phone:e.target.value})} /></label>
-            <label>Location<input value={profileForm.location || ''} onChange={e=>setProfileForm({...profileForm,location:e.target.value})} /></label>
+            <label>Location<input value={profileForm.location || ''} onChange={e=>setProfileForm({...profileForm,location:e.target.value})} />{profileForm.latitude != null && profileForm.longitude != null && <a className="location-map-link" href={`https://www.openstreetmap.org/?mlat=${profileForm.latitude}&mlon=${profileForm.longitude}#map=15/${profileForm.latitude}/${profileForm.longitude}`} target="_blank" rel="noreferrer">View saved pin on map</a>}</label>
+            <div className="location-action-field"><span>Location services</span><button type="button" className="secondary-button compact-button" onClick={useCurrentLocation} disabled={locationLoading}>{locationLoading ? 'Finding location…' : 'Use my current location'}</button><small>Your browser asks permission before sharing your location.</small></div>
             <label>Education<input value={profileForm.education || ''} onChange={e=>setProfileForm({...profileForm,education:e.target.value})} /></label>
             <label>Graduation year<input type="number" value={profileForm.graduationYear || ''} onChange={e=>setProfileForm({...profileForm,graduationYear:e.target.value ? Number(e.target.value) : null})} /></label>
             <label className="full-width">Skills<input value={profileForm.skills || ''} onChange={e=>setProfileForm({...profileForm,skills:e.target.value})} placeholder="Java, React, SQL" /></label>
@@ -765,23 +957,18 @@ function CandidateWorkspace({ initialView = 'overview' }) {
             <h2>Resume</h2>
             <p className="muted-copy">{profile?.resumePath ? 'A resume is saved to your profile. Upload another PDF to replace it.' : 'Upload a PDF resume to use the AI tools and apply with your resume.'}</p>
             <form className="upload-form" onSubmit={uploadResume}>
-              <input type="file" accept="application/pdf,.pdf" onChange={e=>setResumeFile(e.target.files?.[0] || null)} required />
+              <input type="file" accept="application/pdf,.pdf" onChange={e=>setResumeFile(e.target.files?.[0] || null)} />
               <button className="primary-button compact-button" disabled={busy}>{busy ? 'Uploading…' : 'Upload PDF'}</button>
             </form>
+            {resumeFile && <p className="resume-file-label">Selected file: <strong>{resumeFile.name}</strong></p>}
+            {profile?.resumePath && <p className="resume-file-label">Uploaded file: <strong>{profile.resumeFileName || 'Resume PDF'}</strong></p>}
             {profile?.resumePath && <button className="text-button" onClick={openResume}>View current resume</button>}
           </section>
           <section className="panel">
-            <div className="section-heading"><div><h2>AI resume analysis</h2><p className="muted-copy">Get feedback based on the content of your actual resume.</p></div><button className="primary-button compact-button" onClick={analyzeResume} disabled={!profile?.resumePath || busy}>{busy ? 'Analyzing…' : 'Analyze resume'}</button></div>
+            <div className="section-heading"><div><h2>AI resume analysis</h2><p className="muted-copy">Get feedback based on the content of your actual resume.</p></div><button className="primary-button compact-button" onClick={analyzeResume} disabled={!profile?.resumePath || analysisLoading}>{analysisLoading ? 'Analyzing…' : analysis ? 'Refresh analysis' : 'Analyze resume'}</button></div>
             {!profile?.resumePath && <p className="empty-state">Upload your PDF to enable resume analysis.</p>}
-            {analysis && <JsonResult data={analysis} variant="resume-analysis" />}
-            {!!analysisHistory.length && <div className="history-section"><h3>Previous analysis results</h3>{analysisHistory.map((item)=><article className="history-card" key={item.id}>
-              <strong>Score: {item.resumeScore ?? '—'}/100</strong><small>{new Date(item.analyzedAt).toLocaleString()}</small>
-              <div className="analysis-history-details">
-                <div><strong>Skills</strong><StructuredResultValue value={item.extractedSkills} skillMode /></div>
-                <div><strong>Strengths</strong><StructuredResultValue value={item.strengths} /></div>
-                <div><strong>Improvements</strong><StructuredResultValue value={item.suggestions} /></div>
-              </div>
-            </article>)}</div>}
+            {analysis && <ResumeAnalysisDashboard data={analysis} />}
+            {!analysis && analysisHistory.length > 0 && <ResumeAnalysisDashboard data={{ resumeQualityScore: analysisHistory[0].resumeScore, technicalSkills: analysisHistory[0].extractedSkills, strengths: analysisHistory[0].strengths, recommendedImprovements: analysisHistory[0].suggestions, weaknesses: analysisHistory[0].weaknesses }} />}
           </section>
         </>}
 
@@ -799,7 +986,10 @@ function CandidateWorkspace({ initialView = 'overview' }) {
 
         {view === 'matching' && <section className="panel">
           <div className="section-heading"><div><p className="eyebrow">PERSONALIZED FOR YOU</p><h2>Find your best-fit role</h2><p className="muted-copy">Compare your resume with a role and see where you stand.</p></div></div>
-          <form className="inline-form" onSubmit={findMatch}><select required value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)}><option value="">Select a job</option>{jobOptions}</select><button className="primary-button compact-button" disabled={busy || !profile?.resumePath}>{busy ? 'Matching…' : 'Find my match'}</button></form>
+          <p className="muted-copy">Showing active company openings available right now, sorted by most recently posted.</p>
+          <form className="inline-form" onSubmit={findMatch}><select required value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)}><option value="">Select a company role</option>{jobOptions}</select><button className="primary-button compact-button" disabled={busy || !profile?.resumePath || !jobs.length}>{busy ? 'Matching…' : 'Find my match'}</button></form>
+          <div className="match-company-list">{jobs.slice(0,6).map(job=><article key={job.id}><div><strong>{job.title}</strong><span>{job.companyName || 'Company'}{job.location ? ` · ${job.location}` : ''}</span></div><small>{job.createdAt ? `Posted ${new Date(job.createdAt).toLocaleDateString()}` : job.employmentType || 'Open role'}</small></article>)}</div>
+          {!jobs.length && <p className="empty-state">No active company jobs are available yet. Check back after recruiters publish openings.</p>}
           {!profile?.resumePath && <p className="empty-state">Upload a resume before matching with a job.</p>}
           {match && <JobMatchResult data={match} job={jobs.find((job) => String(job.id) === String(selectedJobId))} onApply={() => {
             const job = jobs.find((item) => String(item.id) === String(selectedJobId));
@@ -830,7 +1020,13 @@ function CandidateWorkspace({ initialView = 'overview' }) {
           <form className="inline-form" onSubmit={improveResume}><select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)}><option value="">General improvement</option>{jobOptions}</select><button className="primary-button compact-button" disabled={busy || !profile?.resumePath}>{busy ? 'Reviewing…' : 'Suggest improvements'}</button></form>
           {!profile?.resumePath && <p className="empty-state">Upload a resume to use the improvement assistant.</p>}
           {improvement && <JsonResult data={improvement} />}
-          {!!improvementHistory.length && <div className="history-section"><h3>Previous improvement suggestions</h3>{improvementHistory.slice(0,5).map((item)=><details className="history-card" key={item.id}><summary>{new Date(item.createdAt).toLocaleString()}</summary><h4>Original resume content</h4><pre>{item.originalContent}</pre><h4>Suggested version</h4><pre>{item.improvedContent}</pre></details>)}</div>}
+          <div className="latex-builder">
+            <h3>Build an editable LaTeX resume</h3>
+            <p className="muted-copy">Choose a clean Overleaf-ready layout. AI will place facts from your uploaded resume into the selected style.</p>
+            <div className="inline-form"><select aria-label="Resume template" value={latexTemplate} onChange={e=>setLatexTemplate(e.target.value)}><option value="classic">Classic professional</option><option value="modern">Modern single-column</option><option value="compact">Compact ATS one-page</option></select><button type="button" className="primary-button compact-button" disabled={busy || !profile?.resumePath} onClick={generateLatexResume}>{busy ? 'Creating…' : 'Create LaTeX resume'}</button></div>
+          </div>
+          {latexResume?.latex && <LatexResumeEditor latexResume={latexResume} setLatexResume={setLatexResume} template={latexTemplate} />}
+          {!!improvementHistory.length && <div className="history-section"><h3>Previous improvement suggestions</h3>{improvementHistory.slice(0,5).map((item)=><details className="history-card" key={item.id}><summary>{new Date(item.createdAt).toLocaleString()}</summary><h4>Original resume content</h4><pre>{item.originalContent}</pre><h4>Suggested version</h4><pre>{item.improvedContent || 'No formatted suggestions were saved for this older result. Run Suggest improvements again.'}</pre></details>)}</div>}
         </section>}
 
         {view === 'mock' && <section className="panel">
@@ -1020,6 +1216,55 @@ function JsonResult({ data, variant }) {
   </div>;
 }
 
+function ResumeAnalysisDashboard({ data }) {
+  if (!data) return null;
+  const score = Number(data.atsScore ?? data.resumeQualityScore ?? data.score);
+  const validScore = Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : null;
+  const strengths = data.strengths ?? data.keyStrengths ?? [];
+  const improvements = data.recommendedImprovements ?? data.improvements ?? data.weaknesses ?? [];
+  return <section className="resume-analysis-dashboard">
+    <div className="resume-analysis-hero">
+      <div><span className="eyebrow">RESUME HEALTH</span><h3>ATS compatibility</h3><p>Score reflects structure, readability, skills and ATS readiness.</p></div>
+      <div className="ats-chart-wrap">
+        {validScore == null ? <div className="ats-score-empty">—<small>Run analysis</small></div> : <><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={[{value:validScore},{value:100-validScore}]} dataKey="value" innerRadius="72%" outerRadius="95%" startAngle={90} endAngle={-270} stroke="none"><Cell fill="#3569d4"/><Cell fill="#e7edf7"/></Pie></PieChart></ResponsiveContainer><div className="ats-score-center"><strong>{validScore}</strong><span>/100</span></div></>}
+      </div>
+    </div>
+    <div className="resume-analysis-cards">
+      <article><h4>Strengths</h4><StructuredResultValue value={strengths}/></article>
+      <article><h4>Improvements</h4><StructuredResultValue value={improvements}/></article>
+      <article><h4>Skills found</h4><StructuredResultValue value={data.technicalSkills ?? data.skills} skillMode/></article>
+    </div>
+  </section>;
+}
+
+function LatexResumeEditor({ latexResume, setLatexResume, template }) {
+  const [saved, setSaved] = useState(false);
+
+  function saveSource() {
+    localStorage.setItem('smarthire_latex_resume', JSON.stringify({ template, latex: latexResume.latex, savedAt: new Date().toISOString() }));
+    setSaved(true); setTimeout(() => setSaved(false), 2500);
+  }
+
+  function downloadSource() {
+    const url = URL.createObjectURL(new Blob([latexResume.latex], { type: 'application/x-tex;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'resume.tex'; link.click(); URL.revokeObjectURL(url);
+  }
+
+  return <section className="latex-result">
+    <div className="latex-editor-toolbar"><div><span className="latex-live-dot" /> OVERLEAF STYLE EDITOR <span className="latex-template-tag">{template}</span></div><div className="latex-editor-actions">
+      <button type="button" className="secondary-button compact-button" onClick={()=>navigator.clipboard.writeText(latexResume.latex)}>Copy code</button>
+      <button type="button" className="secondary-button compact-button" onClick={downloadSource}>Download .tex</button>
+      <button type="button" className="primary-button compact-button" onClick={saveSource}>{saved ? 'Saved' : 'Save edits'}</button>
+      <a className="secondary-button compact-button latex-overleaf-link" href="https://www.overleaf.com/project" target="_blank" rel="noreferrer">Open Overleaf</a>
+    </div></div>
+    <div className="latex-workspace">
+      <div className="latex-code-pane"><div className="latex-pane-title"><span>resume.tex</span><span>Editing source</span></div><textarea aria-label="Editable LaTeX source" value={latexResume.latex} onChange={e=>setLatexResume({...latexResume,latex:e.target.value})} spellCheck="false" /></div>
+      <div className="latex-preview-pane"><div className="latex-pane-title"><span>PDF Preview</span><span>Private preview</span></div><div className="latex-preview-message">Your resume source stays in this app. Download the .tex file and open it in Overleaf to compile and preview the PDF.</div></div>
+    </div>
+    {latexResume.improvements && <JsonResult data={{ improvements: latexResume.improvements }} />}
+  </section>;
+}
+
 function StructuredResultValue({ value, skillMode = false }) {
   const parsed = parseStructuredResult(value);
   if (parsed == null) return <p>Not provided</p>;
@@ -1092,22 +1337,48 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [scheduleApplication, setScheduleApplication] = useState(null);
+  const [selectedApplicant, setSelectedApplicant] = useState(null);
+  const [selectedApplicantPhotoUrl, setSelectedApplicantPhotoUrl] = useState('');
   const [scheduleForm, setScheduleForm] = useState({ scheduledAt: '', timeZone: '', details: '', message: '' });
   const [scheduling, setScheduling] = useState(false);
   const [scheduleError, setScheduleError] = useState('');
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [notice, setNotice] = useState('');
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [selectedJobIds, setSelectedJobIds] = useState(() => new Set());
+  const [deletingJobs, setDeletingJobs] = useState(false);
   const [form, setForm] = useState(emptyJobForm());
 
   function emptyJobForm() {
-    return { title: '', description: '', requiredSkills: '', qualification: '', experience: '',
-      location: '', employmentType: 'Full time', salaryRange: '', applicationDeadline: '' };
+    return { title: '', description: '', requiredSkills: '', qualification: 'Any qualification', experience: '0 years',
+      location: '', employmentType: 'Full time', salaryRange: 'Not disclosed', applicationDeadline: '' };
   }
 
   async function loadJobs() {
     const data = await api('/api/jobs/mine');
     setJobs(data);
+    setSelectedJobIds((current) => new Set([...current].filter((id) => data.some((job) => job.id === id))));
+  }
+
+  function useCurrentJobLocation() {
+    if (!navigator.geolocation) { setError('Location is not supported by this browser.'); return; }
+    setLocationLoading(true); setError('');
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${coords.latitude}&lon=${coords.longitude}`);
+        const place = response.ok ? await response.json() : null;
+        const address = place?.address || {};
+        const location = [address.city || address.town || address.village || address.county, address.state, address.country]
+          .filter(Boolean).join(', ') || `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
+        setForm((current) => ({ ...current, location }));
+        setNotice('Current job location added. You can edit it before publishing.');
+      } catch { setError('Could not identify your current location. Enter it manually.'); }
+      finally { setLocationLoading(false); }
+    }, (locationError) => {
+      setLocationLoading(false);
+      setError(locationError.code === 1 ? 'Allow browser location access, then try again.' : 'Could not get your current location.');
+    }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
   }
 
   useEffect(() => {
@@ -1137,10 +1408,10 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
     setEditingId(job.id);
     setForm({
       title: job.title || '', description: job.description || '',
-      requiredSkills: job.requiredSkills || '', qualification: job.qualification || '',
-      experience: job.experience || '', location: job.location || '',
-      employmentType: job.employmentType || 'Full time', salaryRange: job.salaryRange || '',
-      applicationDeadline: job.applicationDeadline || ''
+      requiredSkills: job.requiredSkills || '',
+      experience: job.experience || '0 years', location: job.location || '',
+      employmentType: job.employmentType || 'Full time',
+      qualification: job.qualification || 'Any qualification', salaryRange: job.salaryRange || 'Not disclosed', applicationDeadline: job.applicationDeadline || ''
     });
     setShowForm(true);
     setView('jobs');
@@ -1175,7 +1446,7 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
 
   async function downloadApplicantResume(application) {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8081'}/api/applications/${application.id}/resume`, {
+      const response = await fetch(`${API_URL}/api/applications/${application.id}/resume`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('smarthire_token')}` }
       });
       if (!response.ok) throw new Error('Could not download this resume.');
@@ -1185,14 +1456,62 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
     } catch (e) { setError(e.message); }
   }
 
+  async function openApplicantDetails(application) {
+    setSelectedApplicant(application);
+    setSelectedApplicantPhotoUrl('');
+    if (!application.candidatePhotoAttached) return;
+    try {
+      const response = await fetch(`${API_URL}/api/applications/${application.id}/candidate-photo`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('smarthire_token')}` }
+      });
+      if (!response.ok) throw new Error('Could not load the candidate photo.');
+      setSelectedApplicantPhotoUrl(URL.createObjectURL(await response.blob()));
+    } catch (e) { setError(e.message); }
+  }
+
+  function closeApplicantDetails() {
+    if (selectedApplicantPhotoUrl) URL.revokeObjectURL(selectedApplicantPhotoUrl);
+    setSelectedApplicantPhotoUrl('');
+    setSelectedApplicant(null);
+  }
+
   async function deleteJob(job) {
     if (!window.confirm(`Delete "${job.title}"?`)) return;
+    setError(''); setNotice('');
     try {
       await api(`/api/jobs/${job.id}`, { method: 'DELETE' });
+      setJobs((current) => current.filter((item) => item.id !== job.id));
+      setSelectedJobIds((current) => { const next = new Set(current); next.delete(job.id); return next; });
       setNotice('Job posting deleted.');
-      await loadJobs();
       setStats(await api('/api/analytics/recruiter'));
     } catch (e) { setError(e.message); }
+  }
+
+  function toggleJobSelection(jobId) {
+    setSelectedJobIds((current) => {
+      const next = new Set(current);
+      if (next.has(jobId)) next.delete(jobId); else next.add(jobId);
+      return next;
+    });
+  }
+
+  function selectAllJobs() {
+    setSelectedJobIds((current) => current.size === jobs.length ? new Set() : new Set(jobs.map((job) => job.id)));
+  }
+
+  async function deleteSelectedJobs() {
+    if (!selectedJobIds.size || !window.confirm(`Delete ${selectedJobIds.size} selected job posting${selectedJobIds.size === 1 ? '' : 's'}?`)) return;
+    setDeletingJobs(true); setError(''); setNotice('');
+    const ids = [...selectedJobIds];
+    const results = await Promise.allSettled(ids.map((id) => api(`/api/jobs/${id}`, { method: 'DELETE' })));
+    const failed = results.filter((result) => result.status === 'rejected');
+    const deletedIds = ids.filter((_, index) => results[index].status === 'fulfilled');
+    setJobs((current) => current.filter((job) => !deletedIds.includes(job.id)));
+    setSelectedJobIds(new Set());
+    if (failed.length) setError(`${failed.length} selected job posting${failed.length === 1 ? '' : 's'} could not be deleted. Refresh and try again.`);
+    else setNotice(`${deletedIds.length} job posting${deletedIds.length === 1 ? '' : 's'} deleted successfully.`);
+    try { setStats(await api('/api/analytics/recruiter')); } catch {}
+    finally { setDeletingJobs(false); }
   }
 
   async function changeApplicationStatus(applicationId, status) {
@@ -1292,7 +1611,8 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
           <button className={view === 'overview' ? 'active' : ''} onClick={() => setView('overview')}>Overview</button>
           <button className={view === 'jobs' ? 'active' : ''} onClick={() => { setView('jobs'); setShowForm(false); }}>Manage jobs</button>
           <button onClick={() => { setShowForm(true); setEditingId(null); setForm(emptyJobForm()); setView('jobs'); }}>Post a job</button>
-          <Link to="/recruiter/profile">Company profile</Link>
+          <Link to="/recruiter/profile">My profile</Link>
+          <Link to="/account/password">Change password</Link>
         </nav>
         <div className="sidebar-account">
           <span>Signed in as</span>
@@ -1335,26 +1655,28 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
             <p>Review and update your openings and applicants.</p>
             {!showForm && <button className="primary-button compact-button" onClick={() => { setEditingId(null); setForm(emptyJobForm()); setShowForm(true); }}>+ Post a job</button>}
           </div>
-          {showForm && <form className="panel job-form" onSubmit={saveJob}>
-            <h2>{editingId ? 'Edit job posting' : 'Create a job posting'}</h2>
+          {showForm && <form className="panel job-form recruiter-posting-form" onSubmit={saveJob}>
+            <div className="posting-form-heading"><div><p className="eyebrow">OPENING DETAILS</p><h2>{editingId ? 'Edit job posting' : 'Create a job posting'}</h2><p>Clear fields help candidates find and match with your role.</p></div><span className="posting-form-badge">{editingId ? 'Editing' : 'New opening'}</span></div>
             <div className="form-grid">
-              <label>Job title<input value={form.title} onChange={e=>setForm({...form,title:e.target.value})} required /></label>
-              <label>Location<input value={form.location} onChange={e=>setForm({...form,location:e.target.value})} placeholder="e.g. Bengaluru / Remote" /></label>
-              <label>Employment type<select value={form.employmentType} onChange={e=>setForm({...form,employmentType:e.target.value})}><option>Full time</option><option>Part time</option><option>Contract</option><option>Internship</option></select></label>
+              <label>Job title<input value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="e.g. Java Full Stack Developer" required /></label>
+              <label>Job location<input value={form.location} onChange={e=>setForm({...form,location:e.target.value})} placeholder="City, state, country or Remote" /></label>
+              <div className="location-action-field job-location-action"><span>Live location</span><button type="button" className="secondary-button compact-button" onClick={useCurrentJobLocation} disabled={locationLoading}>{locationLoading ? 'Finding location…' : 'Use my current location'}</button><small>Your browser asks permission before sharing the location.</small></div>
+              <label>Employment type<select value={form.employmentType} onChange={e=>setForm({...form,employmentType:e.target.value})}><option>Full time</option><option>Part time</option><option>Contract</option><option>Internship</option><option>Freelance</option></select></label>
               <label>Experience level<input value={form.experience} onChange={e=>setForm({...form,experience:e.target.value})} placeholder="e.g. 2–4 years" /></label>
+              <label className="experience-option-field">Experience level<select value={form.experience} onChange={e=>setForm({...form,experience:e.target.value})}><option>0 years</option><option>1 year</option><option>2 years</option><option>3 years</option><option>4 to 6 years</option><option>7+ years</option></select></label>
               <label>Required skills<input value={form.requiredSkills} onChange={e=>setForm({...form,requiredSkills:e.target.value})} placeholder="Java, Spring Boot, SQL" /></label>
-              <label>Qualifications<input value={form.qualification} onChange={e=>setForm({...form,qualification:e.target.value})} /></label>
-              <label>Salary range<input value={form.salaryRange} onChange={e=>setForm({...form,salaryRange:e.target.value})} placeholder="Optional" /></label>
+              <label>Qualifications<select value={form.qualification} onChange={e=>setForm({...form,qualification:e.target.value})}><option>Any qualification</option><option>10th / High school</option><option>Diploma</option><option>ITI</option><option>BCA</option><option>B.Sc</option><option>B.Tech / BE</option><option>MCA</option><option>M.Tech / ME</option><option>MBA</option><option>Any bachelor’s degree</option><option>Any master’s degree</option></select></label>
+              <label>Salary range<select value={form.salaryRange} onChange={e=>setForm({...form,salaryRange:e.target.value})}><option>Not disclosed</option><option>₹2–3 LPA</option><option>₹3–5 LPA</option><option>₹5–8 LPA</option><option>₹8–12 LPA</option><option>₹12–18 LPA</option><option>₹18+ LPA</option><option>Hourly / negotiable</option></select></label>
               <label>Application deadline<input type="date" value={form.applicationDeadline} onChange={e=>setForm({...form,applicationDeadline:e.target.value})} /></label>
-              <label className="full-width">Job description<textarea rows="5" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} required /></label>
+              <label className="full-width">Job description<textarea rows="5" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Describe responsibilities, the role, and what candidates will work on." required /></label>
             </div>
             <div className="form-actions">
-              <button className="primary-button compact-button" type="submit">{editingId ? 'Save changes' : 'Publish job'}</button>
+              <button className="primary-button compact-button" type="submit">{editingId ? 'Save job changes' : 'Publish opening'}</button>
               <button className="secondary-button compact-button" type="button" onClick={()=>{setShowForm(false);setEditingId(null);setForm(emptyJobForm());}}>Cancel</button>
             </div>
           </form>}
-          <section className="panel">
-            <h2>Your postings <span className="count-badge">{jobs.length}</span></h2>
+          <section className="panel recruiter-job-list">
+            <div className="recruiter-job-list-heading"><div><h2>Your postings <span className="count-badge">{jobs.length}</span></h2><p>Select openings to delete multiple postings at once.</p></div>{jobs.length > 0 && <div className="bulk-job-actions"><select className="bulk-job-picker" multiple value={[...selectedJobIds].map(String)} onChange={event => setSelectedJobIds(new Set([...event.target.selectedOptions].map((option) => Number(option.value))))} aria-label="Select job postings to delete">{jobs.map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}</select><button type="button" className="secondary-button compact-button" onClick={selectAllJobs}>{selectedJobIds.size === jobs.length ? 'Clear selection' : 'Select all'}</button><button type="button" className="danger-button compact-button" disabled={!selectedJobIds.size || deletingJobs} onClick={deleteSelectedJobs}>{deletingJobs ? 'Deleting…' : `Delete selected${selectedJobIds.size ? ` (${selectedJobIds.size})` : ''}`}</button></div>}</div>
             {jobs.length ? jobs.map((job) => <JobRow key={job.id} job={job} onApplicants={openApplicants} onEdit={startEdit} onToggle={toggleJob} onDelete={deleteJob} />) : <p className="empty-state">No job postings yet. Use “Post a job” to add your first opening.</p>}
           </section>
         </>}
@@ -1384,6 +1706,7 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
                 {application.interviewScheduledAt && <p className="scheduled-interview-note"><strong>Interview scheduled</strong><span>{application.interviewScheduledAt.replace('T', ' ')} ({application.interviewTimeZone})</span><span>{application.interviewDetails}</span></p>}
               </div>
               <div className="applicant-controls">
+                <button className="text-button" onClick={()=>openApplicantDetails(application)}>View profile</button>
                 {application.resumeAttached && <button className="text-button" onClick={()=>downloadApplicantResume(application)}>Download resume</button>}
                 {screening?.matchScore != null && application.status !== 'SHORTLISTED' && <button className="text-button" onClick={()=>changeApplicationStatus(application.id,'SHORTLISTED')}>Shortlist</button>}
                 <select aria-label={`Status for ${application.candidateName}`} value={application.status} onChange={e=>changeApplicationStatus(application.id,e.target.value)}>
@@ -1409,13 +1732,25 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
           <div className="form-actions"><button className="primary-button compact-button" disabled={scheduling}>{scheduling ? 'Sending invitation…' : 'Send interview invitation'}</button><button type="button" className="secondary-button compact-button" disabled={scheduling} onClick={()=>setScheduleApplication(null)}>Cancel</button></div>
         </form>
       </div>}
+      {selectedApplicant && <div className="modal-backdrop" role="presentation" onClick={(event)=>{if(event.target===event.currentTarget)closeApplicantDetails();}}>
+        <section className="apply-modal applicant-profile-modal" role="dialog" aria-modal="true" aria-labelledby="candidate-profile-title">
+          <button type="button" className="modal-close" aria-label="Close" onClick={closeApplicantDetails}>×</button>
+          <p className="eyebrow">CANDIDATE PROFILE</p>
+          <div className="candidate-profile-heading"><div className="profile-photo-preview">{selectedApplicantPhotoUrl ? <img src={selectedApplicantPhotoUrl} alt={`${selectedApplicant.candidateName} profile`} /> : <span>{selectedApplicant.candidateName?.[0] || 'C'}</span>}</div><div><h2 id="candidate-profile-title">{selectedApplicant.candidateName}</h2><p>{selectedApplicant.candidateEmail}</p></div></div>
+          <div className="candidate-profile-details">
+            <p><b>Phone:</b> {selectedApplicant.candidatePhone || 'Not provided'}</p><p><b>Location:</b> {selectedApplicant.candidateLocation || 'Not provided'}</p><p><b>Education:</b> {selectedApplicant.candidateEducation || 'Not provided'}</p><p><b>Skills:</b> {selectedApplicant.candidateSkills || 'Not provided'}</p><p><b>Experience:</b> {selectedApplicant.candidateExperience || 'Not provided'}</p><p><b>Professional summary:</b> {selectedApplicant.candidateProfessionalSummary || 'Not provided'}</p>
+          </div>
+          <div className="form-actions">{selectedApplicant.resumeAttached && <button className="secondary-button compact-button" onClick={()=>downloadApplicantResume(selectedApplicant)}>Download resume</button>}<button className="primary-button compact-button" onClick={closeApplicantDetails}>Close</button></div>
+        </section>
+      </div>}
     </main>
   );
 }
 
-function JobRow({ job, onApplicants, onEdit, onToggle, onDelete }) {
+function JobRow({ job, selected = false, onSelect, onApplicants, onEdit, onToggle, onDelete }) {
   return (
-    <article className="managed-job-row">
+    <article className={`managed-job-row${selected ? ' selected' : ''}`}>
+      {onSelect && <label className="job-select-control"><input type="checkbox" checked={selected} onChange={() => onSelect(job.id)} aria-label={`Select ${job.title}`} /><span>Select</span></label>}
       <div className="managed-job-info">
         <strong>{job.title}</strong>
         <p>{job.location || 'Location not specified'} · {job.employmentType || 'Employment type not specified'} · {job.experience || 'Experience not specified'}</p>
@@ -1444,6 +1779,9 @@ export default function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<AuthPage mode="login" />} />
         <Route path="/register" element={<AuthPage mode="register" />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/account/password" element={<ChangePasswordPage />} />
         <Route path="/candidate" element={
           <Protected role="CANDIDATE"><CandidateWorkspace /></Protected>
         } />

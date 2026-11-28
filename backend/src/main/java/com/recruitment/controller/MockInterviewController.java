@@ -1,12 +1,13 @@
 package com.recruitment.controller;
 
-import com.recruitment.ai.OllamaService;
+import com.recruitment.ai.AiService;
 import com.recruitment.ai.LocalTranscriptionService;
 import com.recruitment.dto.InterviewAnswerResponse;
 import com.recruitment.dto.MockInterviewReport;
 import com.recruitment.dto.MockInterviewResponse;
 import com.recruitment.entity.*;
 import com.recruitment.repository.*;
+import com.recruitment.service.FileStorageService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -14,7 +15,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.nio.file.*;
 import java.util.List;
 import java.util.Map;
 
@@ -22,8 +22,9 @@ import java.util.Map;
 public class MockInterviewController {
     private final MockInterviewRepository interviews; private final InterviewResponseRepository responses;
     private final CandidateRepository candidates; private final UserRepository users;
-    private final JobRepository jobs; private final OllamaService ai; private final LocalTranscriptionService transcription;
-    public MockInterviewController(MockInterviewRepository interviews,InterviewResponseRepository responses,CandidateRepository candidates,UserRepository users,JobRepository jobs,OllamaService ai,LocalTranscriptionService transcription){this.interviews=interviews;this.responses=responses;this.candidates=candidates;this.users=users;this.jobs=jobs;this.ai=ai;this.transcription=transcription;}
+    private final JobRepository jobs; private final AiService ai; private final LocalTranscriptionService transcription;
+    private final FileStorageService fileStorage;
+    public MockInterviewController(MockInterviewRepository interviews,InterviewResponseRepository responses,CandidateRepository candidates,UserRepository users,JobRepository jobs,AiService ai,LocalTranscriptionService transcription,FileStorageService fileStorage){this.interviews=interviews;this.responses=responses;this.candidates=candidates;this.users=users;this.jobs=jobs;this.ai=ai;this.transcription=transcription;this.fileStorage=fileStorage;}
     private Candidate candidate(Authentication auth){return candidates.findByUser(users.findByEmail(auth.getName()).orElseThrow()).orElseThrow();}
 
     @PostMapping
@@ -57,11 +58,9 @@ public class MockInterviewController {
         String transcript=transcription.transcribe(file.getBytes(),baseMimeType);
         var evaluation=ai.evaluateInterviewAnswer(question,transcript,c.getSkills()==null?"":c.getSkills(),
                 interview.getJob()==null?"Interview role":interview.getJob().getTitle());
-        Path dir=Paths.get("uploads","interviews",String.valueOf(id),"audio");Files.createDirectories(dir);
-        Path target=dir.resolve(System.currentTimeMillis()+"-"+Path.of(file.getOriginalFilename()==null?"answer.webm":file.getOriginalFilename()).getFileName());
-        Files.copy(file.getInputStream(),target,StandardCopyOption.REPLACE_EXISTING);
+        String path=fileStorage.store(file, "interviews/" + id + "/audio", "video");
         InterviewResponse response=new InterviewResponse();response.setMockInterview(interview);response.setQuestion(question);
-        response.setAudioPath(target.toString());response.setTranscribedAnswer(transcript);response.setTextAnswer(transcript);
+        response.setAudioPath(path);response.setTranscribedAnswer(transcript);response.setTextAnswer(transcript);
         response.setAiScore(evaluation.path("score").isIntegralNumber()?evaluation.path("score").asInt():null);
         response.setAiFeedback(evaluation.toString());
         return InterviewAnswerResponse.from(responses.save(response));
@@ -75,11 +74,15 @@ public class MockInterviewController {
         if(file.isEmpty())throw new IllegalArgumentException("Recording is required");
         long maxSize=kind.equals("video")?25L*1024*1024:20L*1024*1024;
         if(file.getSize()>maxSize)throw new IllegalArgumentException("Recording exceeds "+(kind.equals("video")?"25":"20")+" MB");
-        Path dir=Paths.get("uploads","interviews",String.valueOf(id),kind);Files.createDirectories(dir);
-        Path target=dir.resolve(System.currentTimeMillis()+"-"+Path.of(file.getOriginalFilename()).getFileName());
-        Files.copy(file.getInputStream(),target,StandardCopyOption.REPLACE_EXISTING);
-        if(responseId!=null){InterviewResponse r=responses.findById(responseId).orElseThrow();if(!r.getMockInterview().getId().equals(id))throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN,"Response does not belong to this interview");if(kind.equals("audio"))r.setAudioPath(target.toString());else r.setVideoPath(target.toString());responses.save(r);}
-        return Map.of("path",target.toString().replace('\\','/'));
+        InterviewResponse response=null;
+        if(responseId!=null){
+            response=responses.findById(responseId).orElseThrow();
+            if(!response.getMockInterview().getId().equals(id))
+                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN,"Response does not belong to this interview");
+        }
+        String path=fileStorage.store(file, "interviews/" + id + "/" + kind, "video");
+        if(response!=null){if(kind.equals("audio"))response.setAudioPath(path);else response.setVideoPath(path);responses.save(response);}
+        return Map.of("path",path);
     }
     @PostMapping("/{id}/evaluate")
     public MockInterviewReport evaluate(@PathVariable Long id,Authentication auth){
@@ -106,8 +109,8 @@ public class MockInterviewController {
     public ResponseEntity<Void> delete(@PathVariable Long id,Authentication auth)throws Exception{
         MockInterview i=ownedInterview(id,auth);
         for(InterviewResponse response:responses.findByMockInterview(i)){
-            if(response.getAudioPath()!=null) Files.deleteIfExists(Path.of(response.getAudioPath()));
-            if(response.getVideoPath()!=null) Files.deleteIfExists(Path.of(response.getVideoPath()));
+            if(response.getAudioPath()!=null) fileStorage.delete(response.getAudioPath());
+            if(response.getVideoPath()!=null) fileStorage.delete(response.getVideoPath());
             responses.delete(response);
         }
         interviews.delete(i);return ResponseEntity.noContent().build();

@@ -1,13 +1,14 @@
 package com.recruitment.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.recruitment.ai.OllamaService;
+import com.recruitment.ai.AiService;
 import com.recruitment.dto.InterviewQuestionResponse;
 import com.recruitment.dto.JobMatchResponse;
 import com.recruitment.dto.ResumeAnalysisResponse;
 import com.recruitment.dto.ResumeImprovementResponse;
 import com.recruitment.entity.*;
 import com.recruitment.repository.*;
+import com.recruitment.service.FileStorageService;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -16,37 +17,42 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 
 @RestController @RequestMapping("/api/ai") @PreAuthorize("hasRole('CANDIDATE')")
 public class AiController {
-    private final OllamaService ai; private final CandidateRepository candidates;
+    private final AiService ai; private final CandidateRepository candidates;
     private final UserRepository users; private final JobRepository jobs;
     private final ResumeAnalysisRepository analyses; private final JobMatchRepository matches;
     private final InterviewQuestionRepository interviewQuestions; private final ResumeImprovementRepository improvements;
-    public AiController(OllamaService ai,CandidateRepository candidates,UserRepository users,JobRepository jobs,
+    private final FileStorageService fileStorage;
+    public AiController(AiService ai,CandidateRepository candidates,UserRepository users,JobRepository jobs,
                        ResumeAnalysisRepository analyses,JobMatchRepository matches,
-                       InterviewQuestionRepository interviewQuestions,ResumeImprovementRepository improvements){
+                       InterviewQuestionRepository interviewQuestions,ResumeImprovementRepository improvements,
+                       FileStorageService fileStorage){
         this.ai=ai;this.candidates=candidates;this.users=users;this.jobs=jobs;this.analyses=analyses;
         this.matches=matches;this.interviewQuestions=interviewQuestions;this.improvements=improvements;
+        this.fileStorage=fileStorage;
     }
     private Candidate candidate(Authentication auth){return candidates.findByUser(users.findByEmail(auth.getName()).orElseThrow()).orElseThrow();}
     @PostMapping("/resume/analyze")
     public JsonNode analyze(@RequestParam(required=false) MultipartFile file,Authentication auth)throws Exception{
         Candidate c=candidate(auth); String text;
         if(file!=null){try(PDDocument doc=Loader.loadPDF(file.getBytes())){text=new PDFTextStripper().getText(doc);}
-        }else if(c.getResumePath()!=null){try(PDDocument doc=Loader.loadPDF(Files.readAllBytes(Path.of(c.getResumePath())))){text=new PDFTextStripper().getText(doc);}
+        }else if(c.getResumePath()!=null){try(PDDocument doc=Loader.loadPDF(fileStorage.read(c.getResumePath()))){text=new PDFTextStripper().getText(doc);}
         }else throw new IllegalArgumentException("Upload a PDF resume first");
         JsonNode result=ai.analyzeResume(text);
-        ResumeAnalysis analysis=new ResumeAnalysis();
+        ResumeAnalysis analysis=analyses.findFirstByCandidateOrderByAnalyzedAtDesc(c).orElseGet(ResumeAnalysis::new);
         analysis.setCandidate(c);
-        if(result.path("resumeQualityScore").isNumber()) analysis.setResumeScore(result.path("resumeQualityScore").asInt());
-        analysis.setExtractedSkills(asText(result.path("technicalSkills")));
-        analysis.setStrengths(asText(result.path("strengths")));
-        analysis.setWeaknesses(asText(result.path("weaknesses")));
-        analysis.setSuggestions(asText(result.path("recommendedImprovements")));
+        JsonNode score=result.path("resumeQualityScore");
+        if (!score.isNumber()) score=result.path("atsScore");
+        if (!score.isNumber()) score=result.path("score");
+        if (!score.isNumber()) score=result.path("resume_quality_score");
+        if(score.isNumber()) analysis.setResumeScore(Math.max(0,Math.min(100,score.asInt())));
+        analysis.setExtractedSkills(firstText(result,"technicalSkills","skills"));
+        analysis.setStrengths(firstText(result,"strengths","keyStrengths"));
+        analysis.setWeaknesses(firstText(result,"weaknesses","areasForImprovement"));
+        analysis.setSuggestions(firstText(result,"recommendedImprovements","improvements","recommendations"));
         analyses.save(analysis);
         return result;
     }
@@ -54,7 +60,7 @@ public class AiController {
     public JsonNode match(@PathVariable Long jobId,Authentication auth)throws Exception{
         Candidate c=candidate(auth); Job j=jobs.findById(jobId).orElseThrow();
         if(c.getResumePath()==null)throw new IllegalArgumentException("Upload a PDF resume first");
-        try(PDDocument doc=Loader.loadPDF(Files.readAllBytes(Path.of(c.getResumePath())))){
+        try(PDDocument doc=Loader.loadPDF(fileStorage.read(c.getResumePath()))){
             String text=new PDFTextStripper().getText(doc);
             JsonNode result=ai.matchResumeWithJob(text,j.getDescription());
             JobMatch match=new JobMatch();match.setCandidate(c);match.setJob(j);
@@ -70,13 +76,24 @@ public class AiController {
     public JsonNode improve(@RequestParam(required=false) Long jobId,Authentication auth)throws Exception{
         Candidate c=candidate(auth); if(c.getResumePath()==null)throw new IllegalArgumentException("Upload a PDF resume first");
         Job j=jobId==null?null:jobs.findById(jobId).orElse(null);
-        try(PDDocument doc=Loader.loadPDF(Files.readAllBytes(Path.of(c.getResumePath())))){
+        try(PDDocument doc=Loader.loadPDF(fileStorage.read(c.getResumePath()))){
             String text=new PDFTextStripper().getText(doc);
             JsonNode result=ai.improveResume(text,j==null?"General career improvement":j.getDescription());
             ResumeImprovement improvement=new ResumeImprovement();improvement.setCandidate(c);
-            improvement.setOriginalContent(text);improvement.setImprovedContent(result.toString());
+            improvement.setOriginalContent(text);improvement.setImprovedContent(improvedText(result));
             improvements.save(improvement);
             return result;
+        }
+    }
+    @PostMapping("/resume/latex")
+    public JsonNode latex(@RequestParam(defaultValue="classic") String template,
+                          @RequestParam(required=false) Long jobId, Authentication auth) throws Exception {
+        Candidate c=candidate(auth);
+        if(c.getResumePath()==null) throw new IllegalArgumentException("Upload a PDF resume first");
+        Job j=jobId==null?null:jobs.findById(jobId).orElse(null);
+        try(PDDocument doc=Loader.loadPDF(fileStorage.read(c.getResumePath()))) {
+            String text=new PDFTextStripper().getText(doc);
+            return ai.generateLatexResume(text,j==null?"General career improvement":j.getDescription(),template);
         }
     }
     @PostMapping("/interview/generate")
@@ -120,9 +137,35 @@ public class AiController {
         return improvements.findByCandidateOrderByCreatedAtDesc(candidate(auth)).stream().map(ResumeImprovementResponse::from).toList();
     }
     private String extractResumeText(Candidate candidate)throws Exception{
-        try(PDDocument document=Loader.loadPDF(Files.readAllBytes(Path.of(candidate.getResumePath())))){
+        try(PDDocument document=Loader.loadPDF(fileStorage.read(candidate.getResumePath()))){
             return new PDFTextStripper().getText(document);
         }
     }
     private String asText(JsonNode node){return node==null||node.isMissingNode()||node.isNull()?"":node.isTextual()?node.asText():node.toString();}
+    private String firstText(JsonNode result,String... keys) {
+        for(String key:keys) {
+            JsonNode value=result.path(key);
+            if(!value.isMissingNode()&&!value.isNull()&&!value.isEmpty()) return asText(value);
+        }
+        return "";
+    }
+    private String improvedText(JsonNode result) {
+        StringBuilder text=new StringBuilder();
+        appendSection(text,"Professional summary",result.path("improvedProfessionalSummary"));
+        appendSection(text,"Work experience",result.path("improvedWorkExperience"));
+        appendSection(text,"Projects",result.path("improvedProjectDescriptions"));
+        appendSection(text,"Skills",result.path("improvedTechnicalSkills"));
+        appendSection(text,"Grammar corrections",result.path("grammarCorrections"));
+        appendSection(text,"Suggested keywords (verify before adding)",result.path("missingKeywords"));
+        appendSection(text,"Recommendations",result.path("recommendations"));
+        return text.isEmpty()?result.toPrettyString():text.toString().trim();
+    }
+    private void appendSection(StringBuilder target,String title,JsonNode value) {
+        if(value==null||value.isMissingNode()||value.isNull()||value.isEmpty()) return;
+        target.append(title).append('\n');
+        if(value.isArray()) value.forEach(item->target.append("• ").append(asText(item)).append('\n'));
+        else if(value.isObject()) value.fields().forEachRemaining(entry->target.append(entry.getKey()).append(": ").append(asText(entry.getValue())).append('\n'));
+        else target.append(asText(value)).append('\n');
+        target.append('\n');
+    }
 }

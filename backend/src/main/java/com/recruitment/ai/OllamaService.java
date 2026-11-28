@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -16,21 +17,25 @@ import java.util.List;
 import java.util.Map;
 
 @Service
-public class OllamaService {
+@ConditionalOnProperty(name="app.ai.provider", havingValue="ollama")
+public class OllamaService implements AiService {
     private final RestClient client;
     private final String baseUrl;
     private final String model;
     private final String interviewModel;
+    private final String apiKey;
     private final ObjectMapper mapper;
 
     public OllamaService(@Value("${app.ollama.base-url}") String baseUrl,
                          @Value("${app.ollama.model}") String model,
                          @Value("${app.ollama.interview-model}") String interviewModel,
+                         @Value("${app.ollama.api-key:}") String apiKey,
                          ObjectMapper mapper) {
         this.client = RestClient.create();
         this.baseUrl = baseUrl.replaceAll("/+$", "");
         this.model = model;
         this.interviewModel = interviewModel;
+        this.apiKey = apiKey;
         this.mapper = mapper;
     }
 
@@ -93,6 +98,10 @@ public class OllamaService {
         return generateJson("Improve this resume content for the selected job. Return keys: improvedProfessionalSummary, improvedProjectDescriptions, improvedWorkExperience, improvedTechnicalSkills, grammarCorrections, missingKeywords, recommendations. Original resume:\n"+resumeText+"\nJob:\n"+jobDescription);
     }
 
+    public JsonNode generateLatexResume(String resumeText, String jobDescription, String templateId) {
+        return generateJson("Generate a polished ATS-friendly LaTeX resume from only facts in the source resume. Template: "+templateId+". Target role: "+jobDescription+". Return keys latex (complete compilable LaTeX source), professionalSummary, improvements (array). Do not invent data. Source resume:\n"+limitText(resumeText,12_000));
+    }
+
     public JsonNode evaluateInterviewAnswer(String question, String answer, String skills, String jobRole) {
         String prompt = "Evaluate this interview answer for the role. Return keys: score, strengths, weaknesses, missingKeyPoints, " +
                 "improvementSuggestions, sampleImprovedAnswer, relevance, technicalAccuracy, completeness, clarity. " +
@@ -110,26 +119,33 @@ public class OllamaService {
                 "messages", List.of(Map.of("role", "user", "content",
                         prompt+"\nReturn only valid JSON. Do not wrap the JSON in markdown.")),
                 "stream", false,
-                "format", "json",
                 "keep_alive", "10m",
                 "options", Map.of("num_predict", maxTokens == null ? 900 : maxTokens, "temperature", 0.2)));
+        // Ollama Cloud currently does not support the structured-output `format`
+        // parameter. The prompt and response parser still enforce JSON there;
+        // local Ollama retains native JSON mode.
+        if (baseUrl.contains("localhost") || baseUrl.contains("127.0.0.1")) {
+            body.put("format", "json");
+        }
         String response;
         try {
-            response = client.post()
+            var request = client.post()
                     .uri(baseUrl + "/api/chat")
-                    .body(body)
-                    .retrieve()
-                    .body(String.class);
+                    .body(body);
+            if (!apiKey.isBlank()) {
+                request.header("Authorization", "Bearer " + apiKey);
+            }
+            response = request.retrieve().body(String.class);
         } catch (RestClientResponseException e) {
             if (e.getStatusCode().value() == 404) {
                 throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                        "Local model is not installed. Run: ollama pull "+modelName, e);
+                        "Ollama model is not available: "+modelName, e);
             }
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-                    "Local Ollama request failed (HTTP "+e.getStatusCode().value()+")", e);
+                    "Ollama request failed (HTTP "+e.getStatusCode().value()+")", e);
         } catch (ResourceAccessException e) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Local Ollama is not running at "+baseUrl, e);
+                    "Ollama is not reachable at "+baseUrl, e);
         }
 
         JsonNode root;

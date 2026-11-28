@@ -5,28 +5,33 @@ import com.recruitment.entity.Candidate;
 import com.recruitment.entity.User;
 import com.recruitment.repository.CandidateRepository;
 import com.recruitment.repository.UserRepository;
+import com.recruitment.service.FileStorageService;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.CacheControl;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import javax.imageio.ImageIO;
 import java.io.IOException;
+import java.io.FileNotFoundException;
 import java.io.InputStream;
-import java.nio.file.*;
-import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 @RestController @RequestMapping("/api/candidates")
 @PreAuthorize("hasRole('CANDIDATE') or hasRole('ADMIN')")
 public class CandidateController {
     private final UserRepository users;
     private final CandidateRepository candidates;
+    private final FileStorageService fileStorage;
 
-    public CandidateController(UserRepository users, CandidateRepository candidates) {
-        this.users=users; this.candidates=candidates;
+    public CandidateController(UserRepository users, CandidateRepository candidates, FileStorageService fileStorage) {
+        this.users=users; this.candidates=candidates; this.fileStorage=fileStorage;
     }
 
     private Candidate current(Authentication authentication) {
@@ -41,7 +46,7 @@ public class CandidateController {
         Candidate c=current(authentication);
         return new CandidateProfile(user.getName(), user.getEmail(), c.getPhone(), c.getLocation(),
                 c.getEducation(), c.getGraduationYear(), c.getSkills(), c.getExperience(),
-                c.getProfessionalSummary(), c.getResumePath(), c.getPhotoPath());
+                c.getProfessionalSummary(), c.getResumePath(), c.getPhotoPath(), c.getResumeFileName(), c.getLatitude(), c.getLongitude());
     }
 
     @PutMapping("/profile")
@@ -52,8 +57,17 @@ public class CandidateController {
         c.setPhone(request.phone()); c.setLocation(request.location()); c.setEducation(request.education());
         c.setGraduationYear(request.graduationYear()); c.setSkills(request.skills());
         c.setExperience(request.experience()); c.setProfessionalSummary(request.professionalSummary());
+        c.setLatitude(request.latitude()); c.setLongitude(request.longitude());
         c=candidates.save(c);
         return profile(authentication);
+    }
+
+    @GetMapping("/location")
+    public java.util.Map<String,Object> location(Authentication authentication) {
+        Candidate candidate=current(authentication);
+        if(candidate.getLatitude()==null||candidate.getLongitude()==null)
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND,"Save your current location in your profile first");
+        return java.util.Map.of("latitude",candidate.getLatitude(),"longitude",candidate.getLongitude(),"location",candidate.getLocation()==null?"":candidate.getLocation());
     }
 
     @PostMapping(value="/resume", consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -63,10 +77,13 @@ public class CandidateController {
         if (!"application/pdf".equalsIgnoreCase(file.getContentType()))
             throw new IllegalArgumentException("Only PDF resumes are accepted");
         if (file.getSize() > 10 * 1024 * 1024) throw new IllegalArgumentException("Resume exceeds 10 MB");
-        Path dir=Paths.get("uploads","resumes"); Files.createDirectories(dir);
-        String safeName=System.currentTimeMillis()+"-"+Path.of(file.getOriginalFilename()).getFileName();
-        Path target=dir.resolve(safeName); Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
-        Candidate c=current(authentication); c.setResumePath(target.toString().replace('\\','/')); candidates.save(c);
+        String path=fileStorage.store(file, "resumes", "raw");
+        Candidate c=current(authentication);
+        String previous=c.getResumePath();
+        c.setResumePath(path);
+        c.setResumeFileName(org.springframework.util.StringUtils.cleanPath(file.getOriginalFilename()==null?"resume.pdf":file.getOriginalFilename()));
+        candidates.save(c);
+        if (previous!=null && !previous.equals(path)) fileStorage.delete(previous);
         return ResponseEntity.ok(profile(authentication));
     }
 
@@ -74,7 +91,7 @@ public class CandidateController {
     public ResponseEntity<byte[]> downloadResume(Authentication authentication) throws Exception {
         Candidate c=current(authentication);
         if (c.getResumePath()==null) return ResponseEntity.notFound().build();
-        byte[] bytes=Files.readAllBytes(Paths.get(c.getResumePath()));
+        byte[] bytes=fileStorage.read(c.getResumePath());
         return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF).body(bytes);
     }
 
@@ -85,37 +102,37 @@ public class CandidateController {
         if (file.getSize() > 5 * 1024 * 1024) throw new IllegalArgumentException("Profile photo exceeds 5 MB");
 
         String contentType=file.getContentType();
-        String extension;
-        if (MediaType.IMAGE_JPEG_VALUE.equalsIgnoreCase(contentType)) extension=".jpg";
-        else if (MediaType.IMAGE_PNG_VALUE.equalsIgnoreCase(contentType)) extension=".png";
-        else throw new IllegalArgumentException("Only JPEG and PNG photos are accepted");
+        if (!MediaType.IMAGE_JPEG_VALUE.equalsIgnoreCase(contentType)
+                && !MediaType.IMAGE_PNG_VALUE.equalsIgnoreCase(contentType))
+            throw new IllegalArgumentException("Only JPEG and PNG photos are accepted");
         try (InputStream input=file.getInputStream()) {
             if (ImageIO.read(input) == null) throw new IllegalArgumentException("The selected file is not a valid image");
         }
 
-        Path dir=Paths.get("uploads","photos").toAbsolutePath().normalize();
-        Files.createDirectories(dir);
-        Path target=dir.resolve(UUID.randomUUID()+extension);
-        try (InputStream input=file.getInputStream()) {
-            Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING);
-        }
-
         Candidate candidate=current(authentication);
-        Path previous=candidate.getPhotoPath()==null ? null : Paths.get(candidate.getPhotoPath()).toAbsolutePath().normalize();
-        candidate.setPhotoPath(target.toString());
+        String previous=candidate.getPhotoPath();
+        String path=fileStorage.store(file, "photos", "image");
+        candidate.setPhotoPath(path);
         candidates.save(candidate);
-        if (previous != null && previous.startsWith(dir) && !previous.equals(target)) Files.deleteIfExists(previous);
+        if (previous != null && !previous.equals(path)) fileStorage.delete(previous);
         return ResponseEntity.ok(profile(authentication));
     }
 
     @GetMapping("/photo")
-    public ResponseEntity<byte[]> downloadPhoto(Authentication authentication) throws IOException {
+    public ResponseEntity<byte[]> downloadPhoto(Authentication authentication) {
         Candidate candidate=current(authentication);
         if (candidate.getPhotoPath()==null) return ResponseEntity.notFound().build();
-        Path dir=Paths.get("uploads","photos").toAbsolutePath().normalize();
-        Path photo=Paths.get(candidate.getPhotoPath()).toAbsolutePath().normalize();
-        if (!photo.startsWith(dir) || !Files.isRegularFile(photo)) return ResponseEntity.notFound().build();
-        MediaType contentType=photo.toString().toLowerCase().endsWith(".png") ? MediaType.IMAGE_PNG : MediaType.IMAGE_JPEG;
-        return ResponseEntity.ok().contentType(contentType).body(Files.readAllBytes(photo));
+        try {
+            String contentType=fileStorage.contentType(candidate.getPhotoPath());
+            return ResponseEntity.ok().cacheControl(CacheControl.maxAge(10, TimeUnit.MINUTES).cachePrivate())
+                    .contentType(MediaType.parseMediaType(contentType))
+                    .body(fileStorage.readPhoto(candidate.getPhotoPath()));
+        } catch (FileNotFoundException exception) {
+            candidate.setPhotoPath(null);
+            candidates.save(candidate);
+            return ResponseEntity.notFound().build();
+        } catch (IOException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Cloudinary could not load this photo. Upload it again and retry.");
+        }
     }
 }

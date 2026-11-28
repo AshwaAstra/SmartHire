@@ -27,7 +27,7 @@ public class JobController {
     public List<JobResponse> list(@RequestParam(required=false) String location,
                           @RequestParam(required=false) String skill,
                           @RequestParam(required=false) String title){
-        return jobs.findByActiveTrue().stream()
+        return jobs.findByActiveTrueOrderByCreatedAtDesc().stream()
             .filter(j -> location==null || (j.getLocation()!=null && j.getLocation().toLowerCase().contains(location.toLowerCase())))
             .filter(j -> skill==null || (j.getRequiredSkills()!=null && j.getRequiredSkills().toLowerCase().contains(skill.toLowerCase())))
             .filter(j -> title==null || j.getTitle().toLowerCase().contains(title.toLowerCase()))
