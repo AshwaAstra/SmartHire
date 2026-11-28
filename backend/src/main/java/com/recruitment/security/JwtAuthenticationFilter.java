@@ -31,9 +31,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
             try {
-                String email = jwtService.extractEmail(header.substring(7));
+                JwtService.TokenIdentity identity = jwtService.extractIdentity(header.substring(7));
+                String email = identity.email();
                 User user = users.findByEmail(email).orElse(null);
-                if (user != null && user.isEnabled() && SecurityContextHolder.getContext().getAuthentication() == null) {
+                if (user != null && user.isEnabled() && user.getTokenVersion() == identity.version()
+                        && SecurityContextHolder.getContext().getAuthentication() == null) {
                     var auth = new UsernamePasswordAuthenticationToken(
                             email, null, List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())));
                     SecurityContextHolder.getContext().setAuthentication(auth);
@@ -43,5 +45,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
         }
         chain.doFilter(request, response);
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return request.getServletPath().startsWith("/api/auth/");
     }
 }

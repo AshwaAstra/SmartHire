@@ -1144,6 +1144,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   border-radius: 50%;
   animation: smartHireSpin .7s linear infinite;
 }
+.auth-forgot-link { display: flex; justify-content: flex-end; margin: -7px 0 16px; font-size: .82rem; }
+.auth-forgot-link a, .password-card a { color: #2868aa; font-weight: 700; text-decoration: none; }
+.auth-forgot-link a:hover, .password-card a:hover { text-decoration: underline; }
+.password-card { width: min(480px, 100%); gap: 12px; }
+.password-card > p { margin-top: 0; color: #667b96; line-height: 1.55; }
+.password-card .eyebrow { margin-bottom: 0; color: #3656c8; }
+.password-card h1 { margin: 0; }
+.password-card label { display: grid; gap: 7px; color: #3f5875; font-size: .84rem; font-weight: 650; }
+.password-card input { width: 100%; min-height: 45px; padding: 10px 12px; border: 1px solid #d8e1eb; border-radius: 9px; background: #fff; color: #253f5e; }
+.password-card .auth-switch { margin: 5px 0 0; }
 .candidate-layout .panel:hover { transform: translateY(-2px); }
 .candidate-layout .dashboard-sidebar nav button { transition: background-color .2s ease, color .2s ease, transform .2s ease, box-shadow .2s ease; }
 .candidate-layout .dashboard-sidebar nav button.active { box-shadow: inset 3px 0 #2d72cb; }

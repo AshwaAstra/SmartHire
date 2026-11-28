@@ -156,6 +156,7 @@ function RecruiterProfilePage() {
         <Link to="/recruiter/jobs">Manage jobs</Link>
         <Link to="/recruiter/jobs">Post a job</Link>
         <Link className="active" to="/recruiter/profile">Company profile</Link>
+        <Link to="/account/password">Change password</Link>
       </nav>
       <div className="sidebar-account"><span>Signed in as</span><strong>{user.name || user.email || 'Recruiter'}</strong><small>Recruiter</small></div>
       <button className="signout-button" onClick={logout}>Sign out</button>
@@ -234,6 +235,7 @@ function AuthPage({ mode }) {
         {!isLogin && form.role === 'RECRUITER' && <label>Company name<input autoComplete="organization" placeholder="Your company or organization" value={form.companyName} onChange={e=>setForm({...form,companyName:e.target.value})} maxLength="150" required /></label>}
         <label>Email address<input autoComplete="email" type="email" placeholder="you@example.com" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} required /></label>
         <label>Password<div className="auth-password-field"><input autoComplete={isLogin ? 'current-password' : 'new-password'} type={showPassword ? 'text' : 'password'} placeholder="Enter your password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} required /><button type="button" onClick={()=>setShowPassword((visible)=>!visible)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? 'Hide' : 'Show'}</button></div></label>
+        {isLogin && <div className="auth-forgot-link"><Link to="/forgot-password">Forgot password?</Link></div>}
         {!isLogin && <fieldset className="auth-role-field"><legend>I'm joining as</legend><div className="auth-role-options">
           <button type="button" className={form.role === 'CANDIDATE' ? 'auth-role-option selected' : 'auth-role-option'} aria-pressed={form.role === 'CANDIDATE'} onClick={()=>setForm({...form,role:'CANDIDATE'})}><span className="auth-role-icon candidate-role-icon">C</span><span><strong>Candidate</strong><small>Find roles and prepare</small></span><i aria-hidden="true">{form.role === 'CANDIDATE' ? '✓' : ''}</i></button>
           <button type="button" className={form.role === 'RECRUITER' ? 'auth-role-option selected' : 'auth-role-option'} aria-pressed={form.role === 'RECRUITER'} onClick={()=>setForm({...form,role:'RECRUITER'})}><span className="auth-role-icon recruiter-role-icon">R</span><span><strong>Recruiter</strong><small>Post jobs and hire</small></span><i aria-hidden="true">{form.role === 'RECRUITER' ? '✓' : ''}</i></button>
@@ -245,6 +247,89 @@ function AuthPage({ mode }) {
     </section>
     <footer className="auth-footer"><Link to="/">← Back to SmartHire</Link><span>Your next step, made clearer.</span></footer>
   </main>;
+}
+
+function ForgotPasswordPage() {
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  async function submit(event) {
+    event.preventDefault(); setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await api('/api/auth/password-reset/request', { method: 'POST', body: JSON.stringify({ email }) });
+      setNotice(result.message);
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+  return <main className="auth-page"><Link className="auth-brand landing-brand" to="/"><span className="brand-symbol">S</span>SmartHire</Link><form className="auth-card password-card" onSubmit={submit}>
+    <p className="eyebrow">ACCOUNT RECOVERY</p><h1>Forgot password?</h1><p>Enter your account email. If email delivery is configured, we’ll send you a short-lived, one-time reset link.</p>
+    <label>Email address<input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} required /></label>
+    {error && <p className="form-error" role="alert">{error}</p>}{notice && <p className="notice success-notice" role="status">{notice}</p>}
+    <button className="primary-button auth-submit" disabled={busy}>{busy ? 'Sending…' : 'Send reset link'}</button><p className="auth-switch"><Link to="/login">Back to sign in</Link></p>
+  </form></main>;
+}
+
+function ResetPasswordPage() {
+  const navigate = useNavigate();
+  const token = new URLSearchParams(window.location.search).get('token') || '';
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  async function submit(event) {
+    event.preventDefault(); setError('');
+    if (newPassword !== confirmPassword) { setError('New password and confirmation do not match.'); return; }
+    setBusy(true);
+    try {
+      const result = await api('/api/auth/password-reset/confirm', { method: 'POST', body: JSON.stringify({ token, newPassword, confirmPassword }) });
+      setNotice(result.message); setTimeout(() => navigate('/login'), 1400);
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+  return <main className="auth-page"><Link className="auth-brand landing-brand" to="/"><span className="brand-symbol">S</span>SmartHire</Link><form className="auth-card password-card" onSubmit={submit}>
+    <p className="eyebrow">SECURE ACCOUNT</p><h1>Set a new password</h1><p>Use at least 12 characters. This reset link works once and expires after 15 minutes.</p>
+    <label>New password<input type="password" autoComplete="new-password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} minLength="12" maxLength="72" required /></label>
+    <label>Confirm new password<input type="password" autoComplete="new-password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} minLength="12" maxLength="72" required /></label>
+    {error && <p className="form-error" role="alert">{error}</p>}{notice && <p className="notice success-notice" role="status">{notice}</p>}
+    <button className="primary-button auth-submit" disabled={busy || !token}>{busy ? 'Updating…' : 'Change password'}</button>{!token && <p className="form-error">This reset link is missing. Request a new one from the sign-in page.</p>}
+  </form></main>;
+}
+
+function ChangePasswordPage() {
+  const navigate = useNavigate();
+  const user = JSON.parse(localStorage.getItem('smarthire_user') || 'null');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  async function submit(event) {
+    event.preventDefault(); setError(''); setNotice('');
+    if (newPassword !== confirmPassword) { setError('New password and confirmation do not match.'); return; }
+    if (newPassword === currentPassword) { setError('Choose a new password different from your current one.'); return; }
+    setBusy(true);
+    try {
+      const result = await api('/api/account/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword, confirmPassword }) });
+      localStorage.setItem('smarthire_token', result.token);
+      localStorage.setItem('smarthire_user', JSON.stringify(result));
+      setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
+      setNotice('Password changed. This device stays signed in; other sessions must sign in again.');
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+  if (!user || !localStorage.getItem('smarthire_token')) return <Navigate to="/login" replace />;
+  return <main className="auth-page"><Link className="auth-brand landing-brand" to="/"><span className="brand-symbol">S</span>SmartHire</Link><form className="auth-card password-card" onSubmit={submit}>
+    <p className="eyebrow">ACCOUNT SECURITY</p><h1>Change password</h1><p>Verify your current password, then choose a new one with at least 12 characters.</p>
+    <label>Current password<input type="password" autoComplete="current-password" value={currentPassword} onChange={e=>setCurrentPassword(e.target.value)} required /></label>
+    <label>New password<input type="password" autoComplete="new-password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} minLength="12" maxLength="72" required /></label>
+    <label>Confirm new password<input type="password" autoComplete="new-password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} minLength="12" maxLength="72" required /></label>
+    {error && <p className="form-error" role="alert">{error}</p>}{notice && <p className="notice success-notice" role="status">{notice}</p>}
+    <button className="primary-button auth-submit" disabled={busy}>{busy ? 'Updating…' : 'Update password'}</button>
+    <p className="auth-switch"><Link to={user.role === 'CANDIDATE' ? '/candidate' : user.role === 'RECRUITER' ? '/recruiter' : '/admin'}>Back to workspace</Link></p>
+  </form></main>;
 }
 
 function Dashboard({ role }) {
@@ -752,6 +837,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
         <strong className="brand">SmartHire</strong>
         <nav>{menu.map(([key, label]) => <button key={key} className={view === key ? 'active' : ''} onClick={() => { setView(key); setError(''); }}>{label}</button>)}
           <button onClick={loadInterviewHistory}>Interview history</button>
+          <Link to="/account/password">Change password</Link>
         </nav>
         <div className="sidebar-account"><span>Signed in as</span><strong>{user.name || user.email || 'Candidate'}</strong><small>Candidate</small></div>
         <button className="signout-button" onClick={logout}>Sign out</button>
@@ -1450,6 +1536,7 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
           <button className={view === 'jobs' ? 'active' : ''} onClick={() => { setView('jobs'); setShowForm(false); }}>Manage jobs</button>
           <button onClick={() => { setShowForm(true); setEditingId(null); setForm(emptyJobForm()); setView('jobs'); }}>Post a job</button>
           <Link to="/recruiter/profile">Company profile</Link>
+          <Link to="/account/password">Change password</Link>
         </nav>
         <div className="sidebar-account">
           <span>Signed in as</span>
@@ -1613,6 +1700,9 @@ export default function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<AuthPage mode="login" />} />
         <Route path="/register" element={<AuthPage mode="register" />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/account/password" element={<ChangePasswordPage />} />
         <Route path="/candidate" element={
           <Protected role="CANDIDATE"><CandidateWorkspace /></Protected>
         } />
