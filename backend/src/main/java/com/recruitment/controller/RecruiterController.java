@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.multipart.MultipartFile;
 import com.recruitment.service.FileStorageService;
 
@@ -65,11 +67,15 @@ public class RecruiterController {
     }
 
     @GetMapping("/photo")
-    public ResponseEntity<byte[]> photo(Authentication authentication) throws IOException {
+    public ResponseEntity<byte[]> photo(Authentication authentication) {
         Recruiter recruiter=current(authentication);
         if (recruiter.getPhotoPath()==null) return ResponseEntity.notFound().build();
-        return ResponseEntity.ok().cacheControl(CacheControl.maxAge(10, TimeUnit.MINUTES).cachePrivate())
-                .contentType(MediaType.parseMediaType(fileStorage.contentType(recruiter.getPhotoPath())))
-                .body(fileStorage.readPhoto(recruiter.getPhotoPath()));
+        try {
+            return ResponseEntity.ok().cacheControl(CacheControl.maxAge(10, TimeUnit.MINUTES).cachePrivate())
+                    .contentType(MediaType.parseMediaType(fileStorage.contentType(recruiter.getPhotoPath())))
+                    .body(fileStorage.readPhoto(recruiter.getPhotoPath()));
+        } catch (IOException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Cloudinary could not load this photo. Upload it again and retry.");
+        }
     }
 }

@@ -2,6 +2,8 @@ package com.recruitment.service;
 
 import com.cloudinary.Cloudinary;
 import com.cloudinary.utils.ObjectUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -22,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class FileStorageService {
+    private static final Logger log = LoggerFactory.getLogger(FileStorageService.class);
     private static final String CLOUDINARY_PREFIX = "cloudinary|";
     private static final Set<String> RESOURCE_TYPES = Set.of("image", "video", "raw");
 
@@ -76,6 +79,7 @@ public class FileStorageService {
                     "overwrite", false));
             String savedPublicId = result.get("public_id").toString();
             String format = result.get("format") == null ? "" : result.get("format").toString();
+            log.info("Cloudinary stored {} asset {}", resourceType, savedPublicId);
             return CLOUDINARY_PREFIX + resourceType + "|" + format + "|" + savedPublicId;
         }
 
@@ -103,12 +107,17 @@ public class FileStorageService {
         if (!"raw".equals(asset.resourceType()) && !asset.format().isBlank()) {
             urlBuilder.format(asset.format());
         }
-        URLConnection connection = URI.create(urlBuilder.generate(asset.publicId())).toURL().openConnection();
-        connection.setConnectTimeout(10_000);
-        connection.setReadTimeout(30_000);
-        try (var input = connection.getInputStream(); var output = new ByteArrayOutputStream()) {
-            input.transferTo(output);
-            return output.toByteArray();
+        try {
+            URLConnection connection = URI.create(urlBuilder.generate(asset.publicId())).toURL().openConnection();
+            connection.setConnectTimeout(10_000);
+            connection.setReadTimeout(30_000);
+            try (var input = connection.getInputStream(); var output = new ByteArrayOutputStream()) {
+                input.transferTo(output);
+                return output.toByteArray();
+            }
+        } catch (IOException exception) {
+            log.warn("Cloudinary could not read {} asset {} ({})", asset.resourceType(), asset.publicId(), exception.getClass().getSimpleName());
+            throw exception;
         }
     }
 

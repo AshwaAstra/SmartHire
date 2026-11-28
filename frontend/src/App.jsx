@@ -3,6 +3,21 @@ import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate } from 'react
 import { api, API_URL } from './api';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 
+async function photoResponse(response) {
+  if (response.ok) return response.blob();
+  let message = 'Could not load the profile photo.';
+  try {
+    const body = await response.json();
+    message = body.error || body.message || message;
+  } catch {}
+  if (response.status === 401) {
+    localStorage.removeItem('smarthire_token');
+    localStorage.removeItem('smarthire_user');
+    window.location.assign('/login?reason=session-expired');
+  }
+  throw new Error(message);
+}
+
 function Landing() {
   return (
     <main className="landing">
@@ -105,8 +120,9 @@ function RecruiterProfilePage() {
     let active = true;
     let objectUrl = '';
     fetch(`${API_URL}/api/recruiters/photo`, { headers: { Authorization: `Bearer ${localStorage.getItem('smarthire_token')}` } })
-      .then(async response => { if (!response.ok) throw new Error('Could not load the profile photo.'); objectUrl = URL.createObjectURL(await response.blob()); if (active) setPhotoUrl(objectUrl); })
-      .catch(() => { if (active) setPhotoUrl(''); });
+      .then(photoResponse)
+      .then(blob => { objectUrl = URL.createObjectURL(blob); if (active) setPhotoUrl(objectUrl); })
+      .catch((error) => { if (active) setError(error.message); });
     return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [profile.photoPath]);
 
@@ -486,10 +502,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
     fetch(`${API_URL}/api/candidates/photo`, {
       headers: { Authorization: `Bearer ${localStorage.getItem('smarthire_token')}` }
     })
-      .then((response) => {
-        if (!response.ok) throw new Error('Could not load the profile photo.');
-        return response.blob();
-      })
+      .then(photoResponse)
       .then((blob) => {
         objectUrl = URL.createObjectURL(blob);
         if (active) setProfilePhotoUrl(objectUrl);

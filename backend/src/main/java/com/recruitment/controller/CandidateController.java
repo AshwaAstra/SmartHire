@@ -14,6 +14,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import javax.imageio.ImageIO;
 import java.io.IOException;
@@ -116,12 +118,16 @@ public class CandidateController {
     }
 
     @GetMapping("/photo")
-    public ResponseEntity<byte[]> downloadPhoto(Authentication authentication) throws IOException {
+    public ResponseEntity<byte[]> downloadPhoto(Authentication authentication) {
         Candidate candidate=current(authentication);
         if (candidate.getPhotoPath()==null) return ResponseEntity.notFound().build();
-        String contentType=fileStorage.contentType(candidate.getPhotoPath());
-        return ResponseEntity.ok().cacheControl(CacheControl.maxAge(10, TimeUnit.MINUTES).cachePrivate())
-                .contentType(MediaType.parseMediaType(contentType))
-                .body(fileStorage.readPhoto(candidate.getPhotoPath()));
+        try {
+            String contentType=fileStorage.contentType(candidate.getPhotoPath());
+            return ResponseEntity.ok().cacheControl(CacheControl.maxAge(10, TimeUnit.MINUTES).cachePrivate())
+                    .contentType(MediaType.parseMediaType(contentType))
+                    .body(fileStorage.readPhoto(candidate.getPhotoPath()));
+        } catch (IOException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Cloudinary could not load this photo. Upload it again and retry.");
+        }
     }
 }
