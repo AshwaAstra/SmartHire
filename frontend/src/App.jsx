@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
-import { api } from './api';
+import { api, API_URL } from './api';
 
 function Landing() {
   return (
@@ -362,7 +362,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
     let active = true;
     let objectUrl;
     setProfilePhotoUrl('');
-    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8081'}/api/candidates/photo`, {
+    fetch(`${API_URL}/api/candidates/photo`, {
       headers: { Authorization: `Bearer ${localStorage.getItem('smarthire_token')}` }
     })
       .then((response) => {
@@ -644,7 +644,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
 
   async function openResume() {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8081'}/api/candidates/resume`, {
+      const response = await fetch(`${API_URL}/api/candidates/resume`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('smarthire_token')}` }
       });
       if (!response.ok) throw new Error('Could not open the uploaded resume.');
@@ -654,7 +654,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
 
   async function downloadApplicationResume(application) {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8081'}/api/applications/${application.id}/resume`, {
+      const response = await fetch(`${API_URL}/api/applications/${application.id}/resume`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('smarthire_token')}` }
       });
       if (!response.ok) throw new Error('Could not download this resume.');
@@ -1181,7 +1181,7 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
 
   async function downloadApplicantResume(application) {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8081'}/api/applications/${application.id}/resume`, {
+      const response = await fetch(`${API_URL}/api/applications/${application.id}/resume`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('smarthire_token')}` }
       });
       if (!response.ok) throw new Error('Could not download this resume.');

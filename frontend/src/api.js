@@ -1,4 +1,9 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8081';
+// A few hosting dashboards escape `:` as `\:` when values are copied from
+// shell examples. Browsers treat that as a malformed fetch URL, so normalize
+// the configured base once and share it with callers that perform file calls.
+export const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8081')
+  .replaceAll('\\', '')
+  .replace(/\/$/, '');
 
 export async function api(path, options = {}) {
   const token = localStorage.getItem('smarthire_token');
