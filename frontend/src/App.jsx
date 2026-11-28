@@ -382,6 +382,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
     ]).then(([candidateProfile, availableJobs, myApplications, analytics]) => {
       setProfile(candidateProfile);
       setProfileForm(candidateProfile);
+      setResumeFileName(candidateProfile.resumeFileName || '');
       setJobs(availableJobs);
       setApplications(myApplications);
       setStats(analytics);
@@ -478,8 +479,15 @@ function CandidateWorkspace({ initialView = 'overview' }) {
     try {
       const updatedProfile = await api('/api/candidates/resume', { method: 'POST', body: data });
       setProfile(updatedProfile); setProfileForm(updatedProfile); setResumeFile(null); setResumeFileName(updatedProfile.resumeFileName || resumeFile.name);
-      event.target.reset(); showMessage('Resume uploaded successfully.');
+      setAnalysis(null); setNotice('Resume uploaded. AI is analyzing it now…'); setError('');
+      event.target.reset();
+      setAnalysisLoading(true);
+      const result = await api('/api/ai/resume/analyze', { method: 'POST' });
+      setAnalysis(result);
+      setAnalysisHistory(await api('/api/ai/resume/analyses'));
+      showMessage('Resume uploaded and analyzed successfully.');
     } catch (e) { showError(e.message); } finally { setBusy(false); }
+    setAnalysisLoading(false);
   }
 
   async function analyzeResume() {
