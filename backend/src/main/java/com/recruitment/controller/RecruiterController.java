@@ -11,12 +11,14 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.CacheControl;
 import org.springframework.web.multipart.MultipartFile;
 import com.recruitment.service.FileStorageService;
 
 import javax.imageio.ImageIO;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.TimeUnit;
 
 @RestController @RequestMapping("/api/recruiters")
 @PreAuthorize("hasRole('RECRUITER') or hasRole('ADMIN')")
@@ -66,7 +68,8 @@ public class RecruiterController {
     public ResponseEntity<byte[]> photo(Authentication authentication) throws IOException {
         Recruiter recruiter=current(authentication);
         if (recruiter.getPhotoPath()==null) return ResponseEntity.notFound().build();
-        return ResponseEntity.ok().contentType(MediaType.parseMediaType(fileStorage.contentType(recruiter.getPhotoPath())))
-                .body(fileStorage.read(recruiter.getPhotoPath()));
+        return ResponseEntity.ok().cacheControl(CacheControl.maxAge(10, TimeUnit.MINUTES).cachePrivate())
+                .contentType(MediaType.parseMediaType(fileStorage.contentType(recruiter.getPhotoPath())))
+                .body(fileStorage.readPhoto(recruiter.getPhotoPath()));
     }
 }

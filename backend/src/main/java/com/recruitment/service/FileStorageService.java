@@ -13,10 +13,12 @@ import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Instant;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class FileStorageService {
@@ -26,6 +28,8 @@ public class FileStorageService {
     private final String provider;
     private final Path root;
     private final Cloudinary cloudinary;
+    private static final long PHOTO_CACHE_MILLIS = 10 * 60 * 1000L;
+    private final Map<String, CachedPhoto> photoCache = new ConcurrentHashMap<>();
 
     public FileStorageService(
             @Value("${app.file-storage.provider:local}") String provider,
@@ -108,7 +112,19 @@ public class FileStorageService {
         }
     }
 
+    /** Caches already-authorized profile image bytes and avoids repeat Cloudinary downloads. */
+    public byte[] readPhoto(String reference) throws IOException {
+        CachedPhoto cached = photoCache.get(reference);
+        if (cached != null && cached.expiresAt().isAfter(Instant.now())) return cached.bytes();
+        byte[] bytes = read(reference);
+        if (bytes.length <= 5 * 1024 * 1024) {
+            photoCache.put(reference, new CachedPhoto(bytes, Instant.now().plusMillis(PHOTO_CACHE_MILLIS)));
+        }
+        return bytes;
+    }
+
     public void delete(String reference) throws IOException {
+        photoCache.remove(reference);
         if (isCloudinaryReference(reference)) {
             AssetReference asset = parse(reference);
             Map<?, ?> result = cloudinary.uploader().destroy(asset.publicId(), ObjectUtils.asMap(
@@ -165,4 +181,5 @@ public class FileStorageService {
     }
 
     private record AssetReference(String resourceType, String format, String publicId) {}
+    private record CachedPhoto(byte[] bytes, Instant expiresAt) {}
 }
