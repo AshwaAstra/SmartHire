@@ -1,7 +1,7 @@
 package com.recruitment.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.recruitment.ai.OllamaService;
+import com.recruitment.ai.AiService;
 import com.recruitment.dto.InterviewQuestionResponse;
 import com.recruitment.dto.JobMatchResponse;
 import com.recruitment.dto.ResumeAnalysisResponse;
@@ -21,12 +21,12 @@ import java.util.List;
 
 @RestController @RequestMapping("/api/ai") @PreAuthorize("hasRole('CANDIDATE')")
 public class AiController {
-    private final OllamaService ai; private final CandidateRepository candidates;
+    private final AiService ai; private final CandidateRepository candidates;
     private final UserRepository users; private final JobRepository jobs;
     private final ResumeAnalysisRepository analyses; private final JobMatchRepository matches;
     private final InterviewQuestionRepository interviewQuestions; private final ResumeImprovementRepository improvements;
     private final FileStorageService fileStorage;
-    public AiController(OllamaService ai,CandidateRepository candidates,UserRepository users,JobRepository jobs,
+    public AiController(AiService ai,CandidateRepository candidates,UserRepository users,JobRepository jobs,
                        ResumeAnalysisRepository analyses,JobMatchRepository matches,
                        InterviewQuestionRepository interviewQuestions,ResumeImprovementRepository improvements,
                        FileStorageService fileStorage){

@@ -2,7 +2,7 @@ package com.recruitment.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.recruitment.ai.OllamaService;
+import com.recruitment.ai.AiService;
 import com.recruitment.dto.ApplicantScreeningResponse;
 import com.recruitment.entity.*;
 import com.recruitment.dto.ApplicationResponse;
@@ -37,10 +37,10 @@ public class ApplicationController {
     private final ApplicationRepository applications; private final CandidateRepository candidates;
     private final JobRepository jobs; private final UserRepository users;
     private final InterviewInvitationService interviewInvitations;
-    private final OllamaService ai;
+    private final AiService ai;
     private final FileStorageService fileStorage;
     public ApplicationController(ApplicationRepository applications,CandidateRepository candidates,JobRepository jobs,
-                                 UserRepository users,InterviewInvitationService interviewInvitations,OllamaService ai,
+                                 UserRepository users,InterviewInvitationService interviewInvitations,AiService ai,
                                  FileStorageService fileStorage){
         this.applications=applications;this.candidates=candidates;this.jobs=jobs;this.users=users;
         this.interviewInvitations=interviewInvitations;this.ai=ai;this.fileStorage=fileStorage;

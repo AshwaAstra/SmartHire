@@ -1,6 +1,6 @@
 package com.recruitment.controller;
 
-import com.recruitment.ai.OllamaService;
+import com.recruitment.ai.AiService;
 import com.recruitment.ai.LocalTranscriptionService;
 import com.recruitment.dto.InterviewAnswerResponse;
 import com.recruitment.dto.MockInterviewReport;
@@ -22,9 +22,9 @@ import java.util.Map;
 public class MockInterviewController {
     private final MockInterviewRepository interviews; private final InterviewResponseRepository responses;
     private final CandidateRepository candidates; private final UserRepository users;
-    private final JobRepository jobs; private final OllamaService ai; private final LocalTranscriptionService transcription;
+    private final JobRepository jobs; private final AiService ai; private final LocalTranscriptionService transcription;
     private final FileStorageService fileStorage;
-    public MockInterviewController(MockInterviewRepository interviews,InterviewResponseRepository responses,CandidateRepository candidates,UserRepository users,JobRepository jobs,OllamaService ai,LocalTranscriptionService transcription,FileStorageService fileStorage){this.interviews=interviews;this.responses=responses;this.candidates=candidates;this.users=users;this.jobs=jobs;this.ai=ai;this.transcription=transcription;this.fileStorage=fileStorage;}
+    public MockInterviewController(MockInterviewRepository interviews,InterviewResponseRepository responses,CandidateRepository candidates,UserRepository users,JobRepository jobs,AiService ai,LocalTranscriptionService transcription,FileStorageService fileStorage){this.interviews=interviews;this.responses=responses;this.candidates=candidates;this.users=users;this.jobs=jobs;this.ai=ai;this.transcription=transcription;this.fileStorage=fileStorage;}
     private Candidate candidate(Authentication auth){return candidates.findByUser(users.findByEmail(auth.getName()).orElseThrow()).orElseThrow();}
 
     @PostMapping

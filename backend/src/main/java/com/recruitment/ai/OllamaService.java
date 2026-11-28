@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -16,7 +17,8 @@ import java.util.List;
 import java.util.Map;
 
 @Service
-public class OllamaService {
+@ConditionalOnProperty(name="app.ai.provider", havingValue="ollama")
+public class OllamaService implements AiService {
     private final RestClient client;
     private final String baseUrl;
     private final String model;
