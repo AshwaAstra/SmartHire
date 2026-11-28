@@ -44,7 +44,10 @@ public class AiController {
         JsonNode result=ai.analyzeResume(text);
         ResumeAnalysis analysis=new ResumeAnalysis();
         analysis.setCandidate(c);
-        if(result.path("resumeQualityScore").isNumber()) analysis.setResumeScore(result.path("resumeQualityScore").asInt());
+        JsonNode score=result.path("resumeQualityScore");
+        if (!score.isNumber()) score=result.path("atsScore");
+        if (!score.isNumber()) score=result.path("score");
+        if(score.isNumber()) analysis.setResumeScore(Math.max(0,Math.min(100,score.asInt())));
         analysis.setExtractedSkills(asText(result.path("technicalSkills")));
         analysis.setStrengths(asText(result.path("strengths")));
         analysis.setWeaknesses(asText(result.path("weaknesses")));
@@ -76,9 +79,20 @@ public class AiController {
             String text=new PDFTextStripper().getText(doc);
             JsonNode result=ai.improveResume(text,j==null?"General career improvement":j.getDescription());
             ResumeImprovement improvement=new ResumeImprovement();improvement.setCandidate(c);
-            improvement.setOriginalContent(text);improvement.setImprovedContent(result.toString());
+            improvement.setOriginalContent(text);improvement.setImprovedContent(improvedText(result));
             improvements.save(improvement);
             return result;
+        }
+    }
+    @PostMapping("/resume/latex")
+    public JsonNode latex(@RequestParam(defaultValue="classic") String template,
+                          @RequestParam(required=false) Long jobId, Authentication auth) throws Exception {
+        Candidate c=candidate(auth);
+        if(c.getResumePath()==null) throw new IllegalArgumentException("Upload a PDF resume first");
+        Job j=jobId==null?null:jobs.findById(jobId).orElse(null);
+        try(PDDocument doc=Loader.loadPDF(fileStorage.read(c.getResumePath()))) {
+            String text=new PDFTextStripper().getText(doc);
+            return ai.generateLatexResume(text,j==null?"General career improvement":j.getDescription(),template);
         }
     }
     @PostMapping("/interview/generate")
@@ -127,4 +141,23 @@ public class AiController {
         }
     }
     private String asText(JsonNode node){return node==null||node.isMissingNode()||node.isNull()?"":node.isTextual()?node.asText():node.toString();}
+    private String improvedText(JsonNode result) {
+        StringBuilder text=new StringBuilder();
+        appendSection(text,"Professional summary",result.path("improvedProfessionalSummary"));
+        appendSection(text,"Work experience",result.path("improvedWorkExperience"));
+        appendSection(text,"Projects",result.path("improvedProjectDescriptions"));
+        appendSection(text,"Skills",result.path("improvedTechnicalSkills"));
+        appendSection(text,"Grammar corrections",result.path("grammarCorrections"));
+        appendSection(text,"Suggested keywords (verify before adding)",result.path("missingKeywords"));
+        appendSection(text,"Recommendations",result.path("recommendations"));
+        return text.isEmpty()?result.toPrettyString():text.toString().trim();
+    }
+    private void appendSection(StringBuilder target,String title,JsonNode value) {
+        if(value==null||value.isMissingNode()||value.isNull()||value.isEmpty()) return;
+        target.append(title).append('\n');
+        if(value.isArray()) value.forEach(item->target.append("• ").append(asText(item)).append('\n'));
+        else if(value.isObject()) value.fields().forEachRemaining(entry->target.append(entry.getKey()).append(": ").append(asText(entry.getValue())).append('\n'));
+        else target.append(asText(value)).append('\n');
+        target.append('\n');
+    }
 }

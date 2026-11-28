@@ -660,6 +660,12 @@ a { color: inherit; }
 .profile-photo-copy h3 { margin: 0 0 4px; color: #28415f; font-size: .98rem; }
 .profile-photo-copy p { margin: 0 0 12px; color: #6b7b91; font-size: .86rem; line-height: 1.5; }
 .profile-photo-input { display: none; }
+.latex-builder { margin-top: 24px; padding-top: 20px; border-top: 1px solid #e6ecf4; }
+.latex-builder h3, .latex-result h3 { margin: 0 0 6px; color: #28415f; }
+.latex-result { margin-top: 18px; padding: 16px; border: 1px solid #dce7f5; border-radius: 12px; background: #fbfdff; }
+.latex-result textarea { width: 100%; margin-top: 12px; padding: 14px; border: 1px solid #d8e1eb; border-radius: 9px; background: #f7f9fc; color: #26364b; font: 13px/1.55 Consolas, Monaco, monospace; resize: vertical; }
+.resume-file-label { margin: 10px 0; color: #536981; }
+.resume-file-label strong { color: #28415f; overflow-wrap: anywhere; }
 .candidate-profile-heading { display: flex; align-items: center; gap: 14px; margin: 0 0 18px; }
 .candidate-profile-heading h2 { margin: 0; color: #28415f; }
 .candidate-profile-heading p { margin: 4px 0 0; color: #667085; }

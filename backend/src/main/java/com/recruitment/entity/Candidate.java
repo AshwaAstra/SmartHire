@@ -12,6 +12,7 @@ public class Candidate {
     @Column(columnDefinition="TEXT") private String experience;
     @Column(columnDefinition="TEXT") private String professionalSummary;
     private String resumePath;
+    private String resumeFileName;
     private String photoPath;
     public Long getId(){return id;} public void setId(Long id){this.id=id;}
     public User getUser(){return user;} public void setUser(User user){this.user=user;}
@@ -23,5 +24,6 @@ public class Candidate {
     public String getExperience(){return experience;} public void setExperience(String experience){this.experience=experience;}
     public String getProfessionalSummary(){return professionalSummary;} public void setProfessionalSummary(String value){this.professionalSummary=value;}
     public String getResumePath(){return resumePath;} public void setResumePath(String resumePath){this.resumePath=resumePath;}
+    public String getResumeFileName(){return resumeFileName;} public void setResumeFileName(String resumeFileName){this.resumeFileName=resumeFileName;}
     public String getPhotoPath(){return photoPath;} public void setPhotoPath(String photoPath){this.photoPath=photoPath;}
 }

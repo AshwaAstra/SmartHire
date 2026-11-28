@@ -98,6 +98,10 @@ public class OllamaService implements AiService {
         return generateJson("Improve this resume content for the selected job. Return keys: improvedProfessionalSummary, improvedProjectDescriptions, improvedWorkExperience, improvedTechnicalSkills, grammarCorrections, missingKeywords, recommendations. Original resume:\n"+resumeText+"\nJob:\n"+jobDescription);
     }
 
+    public JsonNode generateLatexResume(String resumeText, String jobDescription, String templateId) {
+        return generateJson("Generate a polished ATS-friendly LaTeX resume from only facts in the source resume. Template: "+templateId+". Target role: "+jobDescription+". Return keys latex (complete compilable LaTeX source), professionalSummary, improvements (array). Do not invent data. Source resume:\n"+limitText(resumeText,12_000));
+    }
+
     public JsonNode evaluateInterviewAnswer(String question, String answer, String skills, String jobRole) {
         String prompt = "Evaluate this interview answer for the role. Return keys: score, strengths, weaknesses, missingKeyPoints, " +
                 "improvementSuggestions, sampleImprovedAnswer, relevance, technicalAccuracy, completeness, clarity. " +

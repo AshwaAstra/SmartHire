@@ -85,7 +85,7 @@ public class GeminiService implements AiService {
     }
 
     @Override public JsonNode analyzeResume(String resumeText) {
-        return generateJson("Analyze this real resume and produce keys: professionalSummary, technicalSkills, education, workExperience, projects, strengths, weaknesses, missingSkills, resumeQualityScore, formattingSuggestions, recommendedImprovements. Resume:\\n"+resumeText);
+        return generateJson("Analyze this real resume using only explicit facts. Return JSON keys: professionalSummary (string), technicalSkills (object or array), education (array), workExperience (array), projects (array), strengths (array), weaknesses (array), missingSkills (array), resumeQualityScore (integer 0-100), atsScore (integer 0-100), formattingSuggestions (array), recommendedImprovements (array). Provide resumeQualityScore and atsScore every time, using a fair rubric for readability, structure, measurable impact, skills relevance, and ATS parsing. Never invent resume facts. Resume:\\n"+resumeText);
     }
     @Override public JsonNode matchResumeWithJob(String resumeText,String jobDescription) {
         return generateJson("Compare the real resume with the real job description and produce keys: overallMatchPercentage, matchingSkills, missingSkills, relevantExperience, qualificationCompatibility, jobRequirementCompatibility, recommendations. Resume:\\n"+resumeText+"\\nJob:\\n"+jobDescription);
@@ -97,7 +97,15 @@ public class GeminiService implements AiService {
         return generateJson("Generate "+count+" interview questions for category "+category+" at "+difficulty+" difficulty using the resume and job. Return a JSON object with questions array; each item has question, suggestedAnswer, followUpQuestions. Resume:\\n"+resumeText+"\\nJob:\\n"+jobDescription);
     }
     @Override public JsonNode improveResume(String resumeText,String jobDescription) {
-        return generateJson("Improve this resume content for the selected job. Return keys: improvedProfessionalSummary, improvedProjectDescriptions, improvedWorkExperience, improvedTechnicalSkills, grammarCorrections, missingKeywords, recommendations. Original resume:\\n"+resumeText+"\\nJob:\\n"+jobDescription);
+        return generateJson("Improve this resume for the selected role. Use only source facts; never invent employers, dates, degrees, achievements, metrics, or skills. Return JSON with keys improvedProfessionalSummary (string), improvedProjectDescriptions (array), improvedWorkExperience (array), improvedTechnicalSkills (array), grammarCorrections (array), missingKeywords (array of role keywords that are missing, explicitly marked as suggestions, not claims), recommendations (array). Original resume:\\n"+resumeText+"\\nTarget role:\\n"+jobDescription);
+    }
+    @Override public JsonNode generateLatexResume(String resumeText,String jobDescription,String templateId) {
+        String style=switch (templateId) {
+            case "modern" -> "modern single-column with strong headings and restrained blue accents";
+            case "compact" -> "compact one-page ATS-first single-column with tight spacing";
+            default -> "classic professional single-column ATS-friendly";
+        };
+        return generateJson("Create a complete compilable LaTeX resume using the requested style: "+style+". Target role: "+jobDescription+". Use only facts from source. Do not invent personal details, dates, employers, skills, or achievements. Escape LaTeX special characters. Avoid tables, columns, icons and graphics for ATS compatibility. Return JSON with keys latex (one complete source string using article class and common packages only), professionalSummary (string), improvements (array). Source resume:\\n"+resumeText);
     }
     @Override public JsonNode evaluateInterviewAnswer(String question,String answer,String skills,String jobRole) {
         return generateJson("Evaluate this actual answer. Return keys: score, strengths, weaknesses, missingKeyPoints, improvementSuggestions, sampleImprovedAnswer, relevance, technicalAccuracy, completeness, clarity. Question:"+question+"\\nAnswer:"+answer+"\\nSkills:"+skills+"\\nRole:"+jobRole);

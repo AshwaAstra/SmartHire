@@ -298,6 +298,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
   const [search, setSearch] = useState('');
   const [selectedJobId, setSelectedJobId] = useState('');
   const [resumeFile, setResumeFile] = useState(null);
+  const [resumeFileName, setResumeFileName] = useState('');
   const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
   const photoInputRef = useRef(null);
   const [applyJob, setApplyJob] = useState(null);
@@ -310,6 +311,8 @@ function CandidateWorkspace({ initialView = 'overview' }) {
   const [questions, setQuestions] = useState(null);
   const [questionHistory, setQuestionHistory] = useState([]);
   const [improvement, setImprovement] = useState(null);
+  const [latexResume, setLatexResume] = useState(null);
+  const [latexTemplate, setLatexTemplate] = useState('classic');
   const [improvementHistory, setImprovementHistory] = useState([]);
   const [mockConfig, setMockConfig] = useState({ jobId: '', category: 'Mixed', difficulty: 'Intermediate', totalQuestions: 5, interviewType: 'TEXT' });
   const [mockInterview, setMockInterview] = useState(null);
@@ -472,7 +475,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
     const data = new FormData(); data.append('file', resumeFile); setBusy(true);
     try {
       const updatedProfile = await api('/api/candidates/resume', { method: 'POST', body: data });
-      setProfile(updatedProfile); setProfileForm(updatedProfile); setResumeFile(null);
+      setProfile(updatedProfile); setProfileForm(updatedProfile); setResumeFile(null); setResumeFileName(updatedProfile.resumeFileName || resumeFile.name);
       event.target.reset(); showMessage('Resume uploaded successfully.');
     } catch (e) { showError(e.message); } finally { setBusy(false); }
   }
@@ -520,6 +523,15 @@ function CandidateWorkspace({ initialView = 'overview' }) {
     const params = selectedJobId ? `?jobId=${selectedJobId}` : '';
     try { setImprovement(await api(`/api/ai/resume/improve${params}`, { method: 'POST' })); setImprovementHistory(await api('/api/ai/resume/improvements')); }
     catch (e) { showError(e.message); } finally { setBusy(false); }
+  }
+
+  async function generateLatexResume() {
+    setBusy(true);
+    try {
+      const params = new URLSearchParams({ template: latexTemplate, ...(selectedJobId ? { jobId: selectedJobId } : {}) });
+      setLatexResume(await api(`/api/ai/resume/latex?${params}`, { method: 'POST' }));
+    } catch (e) { showError(e.message); }
+    finally { setBusy(false); }
   }
 
   async function startMockInterview(event) {
@@ -800,9 +812,11 @@ function CandidateWorkspace({ initialView = 'overview' }) {
             <h2>Resume</h2>
             <p className="muted-copy">{profile?.resumePath ? 'A resume is saved to your profile. Upload another PDF to replace it.' : 'Upload a PDF resume to use the AI tools and apply with your resume.'}</p>
             <form className="upload-form" onSubmit={uploadResume}>
-              <input type="file" accept="application/pdf,.pdf" onChange={e=>setResumeFile(e.target.files?.[0] || null)} required />
+              <input type="file" accept="application/pdf,.pdf" onChange={e=>setResumeFile(e.target.files?.[0] || null)} />
               <button className="primary-button compact-button" disabled={busy}>{busy ? 'Uploading…' : 'Upload PDF'}</button>
             </form>
+            {resumeFile && <p className="resume-file-label">Selected file: <strong>{resumeFile.name}</strong></p>}
+            {profile?.resumePath && <p className="resume-file-label">Uploaded file: <strong>{profile.resumeFileName || 'Resume PDF'}</strong></p>}
             {profile?.resumePath && <button className="text-button" onClick={openResume}>View current resume</button>}
           </section>
           <section className="panel">
@@ -810,7 +824,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
             {!profile?.resumePath && <p className="empty-state">Upload your PDF to enable resume analysis.</p>}
             {analysis && <JsonResult data={analysis} variant="resume-analysis" />}
             {!!analysisHistory.length && <div className="history-section"><h3>Previous analysis results</h3>{analysisHistory.map((item)=><article className="history-card" key={item.id}>
-              <strong>Score: {item.resumeScore ?? '—'}/100</strong><small>{new Date(item.analyzedAt).toLocaleString()}</small>
+              <strong>Resume score: {item.resumeScore == null ? 'Not available in this older result' : `${item.resumeScore}/100`}</strong><small>{new Date(item.analyzedAt).toLocaleString()}</small>
               <div className="analysis-history-details">
                 <div><strong>Skills</strong><StructuredResultValue value={item.extractedSkills} skillMode /></div>
                 <div><strong>Strengths</strong><StructuredResultValue value={item.strengths} /></div>
@@ -865,7 +879,13 @@ function CandidateWorkspace({ initialView = 'overview' }) {
           <form className="inline-form" onSubmit={improveResume}><select value={selectedJobId} onChange={e=>setSelectedJobId(e.target.value)}><option value="">General improvement</option>{jobOptions}</select><button className="primary-button compact-button" disabled={busy || !profile?.resumePath}>{busy ? 'Reviewing…' : 'Suggest improvements'}</button></form>
           {!profile?.resumePath && <p className="empty-state">Upload a resume to use the improvement assistant.</p>}
           {improvement && <JsonResult data={improvement} />}
-          {!!improvementHistory.length && <div className="history-section"><h3>Previous improvement suggestions</h3>{improvementHistory.slice(0,5).map((item)=><details className="history-card" key={item.id}><summary>{new Date(item.createdAt).toLocaleString()}</summary><h4>Original resume content</h4><pre>{item.originalContent}</pre><h4>Suggested version</h4><pre>{item.improvedContent}</pre></details>)}</div>}
+          <div className="latex-builder">
+            <h3>Build an editable LaTeX resume</h3>
+            <p className="muted-copy">Choose a clean Overleaf-ready layout. AI will place facts from your uploaded resume into the selected style.</p>
+            <div className="inline-form"><select aria-label="Resume template" value={latexTemplate} onChange={e=>setLatexTemplate(e.target.value)}><option value="classic">Classic professional</option><option value="modern">Modern single-column</option><option value="compact">Compact ATS one-page</option></select><button type="button" className="primary-button compact-button" disabled={busy || !profile?.resumePath} onClick={generateLatexResume}>{busy ? 'Creating…' : 'Create LaTeX resume'}</button></div>
+          </div>
+          {latexResume?.latex && <section className="latex-result"><div className="section-heading"><div><h3>Editable LaTeX source</h3><p className="muted-copy">Copy this code into a new Overleaf project, or edit it here first.</p></div><button type="button" className="secondary-button compact-button" onClick={()=>navigator.clipboard.writeText(latexResume.latex)}>Copy LaTeX</button></div><textarea aria-label="Editable LaTeX source" value={latexResume.latex} onChange={e=>setLatexResume({...latexResume,latex:e.target.value})} rows="20" spellCheck="false" />{latexResume.improvements && <JsonResult data={{ improvements: latexResume.improvements }} />}</section>}
+          {!!improvementHistory.length && <div className="history-section"><h3>Previous improvement suggestions</h3>{improvementHistory.slice(0,5).map((item)=><details className="history-card" key={item.id}><summary>{new Date(item.createdAt).toLocaleString()}</summary><h4>Original resume content</h4><pre>{item.originalContent}</pre><h4>Suggested version</h4><pre>{item.improvedContent || 'No formatted suggestions were saved for this older result. Run Suggest improvements again.'}</pre></details>)}</div>}
         </section>}
 
         {view === 'mock' && <section className="panel">

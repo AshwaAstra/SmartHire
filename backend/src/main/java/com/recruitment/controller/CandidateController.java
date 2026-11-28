@@ -41,7 +41,7 @@ public class CandidateController {
         Candidate c=current(authentication);
         return new CandidateProfile(user.getName(), user.getEmail(), c.getPhone(), c.getLocation(),
                 c.getEducation(), c.getGraduationYear(), c.getSkills(), c.getExperience(),
-                c.getProfessionalSummary(), c.getResumePath(), c.getPhotoPath());
+                c.getProfessionalSummary(), c.getResumePath(), c.getPhotoPath(), c.getResumeFileName());
     }
 
     @PutMapping("/profile")
@@ -64,7 +64,12 @@ public class CandidateController {
             throw new IllegalArgumentException("Only PDF resumes are accepted");
         if (file.getSize() > 10 * 1024 * 1024) throw new IllegalArgumentException("Resume exceeds 10 MB");
         String path=fileStorage.store(file, "resumes", "raw");
-        Candidate c=current(authentication); c.setResumePath(path); candidates.save(c);
+        Candidate c=current(authentication);
+        String previous=c.getResumePath();
+        c.setResumePath(path);
+        c.setResumeFileName(org.springframework.util.StringUtils.cleanPath(file.getOriginalFilename()==null?"resume.pdf":file.getOriginalFilename()));
+        candidates.save(c);
+        if (previous!=null && !previous.equals(path)) fileStorage.delete(previous);
         return ResponseEntity.ok(profile(authentication));
     }
 
