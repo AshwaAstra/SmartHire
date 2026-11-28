@@ -113,9 +113,14 @@ public class OllamaService {
                 "messages", List.of(Map.of("role", "user", "content",
                         prompt+"\nReturn only valid JSON. Do not wrap the JSON in markdown.")),
                 "stream", false,
-                "format", "json",
                 "keep_alive", "10m",
                 "options", Map.of("num_predict", maxTokens == null ? 900 : maxTokens, "temperature", 0.2)));
+        // Ollama Cloud currently does not support the structured-output `format`
+        // parameter. The prompt and response parser still enforce JSON there;
+        // local Ollama retains native JSON mode.
+        if (baseUrl.contains("localhost") || baseUrl.contains("127.0.0.1")) {
+            body.put("format", "json");
+        }
         String response;
         try {
             var request = client.post()

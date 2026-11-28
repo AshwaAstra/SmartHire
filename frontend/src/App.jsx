@@ -89,6 +89,8 @@ function RecruiterProfilePage() {
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [notice, setNotice] = useState('');
+  const [photoUrl, setPhotoUrl] = useState('');
+  const photoInputRef = useRef(null);
 
   useEffect(() => {
     api('/api/recruiters/profile')
@@ -96,6 +98,29 @@ function RecruiterProfilePage() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!profile.photoPath) { setPhotoUrl(''); return; }
+    let active = true;
+    let objectUrl = '';
+    fetch(`${API_URL}/api/recruiters/photo`, { headers: { Authorization: `Bearer ${localStorage.getItem('smarthire_token')}` } })
+      .then(async response => { if (!response.ok) throw new Error('Could not load the profile photo.'); objectUrl = URL.createObjectURL(await response.blob()); if (active) setPhotoUrl(objectUrl); })
+      .catch(() => { if (active) setPhotoUrl(''); });
+    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [profile.photoPath]);
+
+  async function uploadPhoto(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { setError('Profile photos must be 5 MB or smaller.'); return; }
+    setSaving(true); setError(''); setNotice('');
+    try {
+      const data = new FormData(); data.append('file', file);
+      setProfile(await api('/api/recruiters/photo', { method: 'POST', body: data }));
+      setNotice('Profile photo updated.');
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); event.target.value = ''; }
+  }
 
   async function saveProfile(event) {
     event.preventDefault();
@@ -135,11 +160,15 @@ function RecruiterProfilePage() {
       <button className="signout-button" onClick={logout}>Sign out</button>
     </aside>
     <section className="dashboard-main recruiter-main">
-      <header><div><p>Recruiter workspace</p><h1>Company profile</h1></div><div className="avatar">{user.name?.[0] || 'R'}</div></header>
+      <header><div><p>Recruiter workspace</p><h1>Company profile</h1></div><div className={`avatar${photoUrl ? ' has-photo' : ''}`}>{photoUrl ? <img src={photoUrl} alt="Recruiter profile" /> : (user.name?.[0] || 'R')}</div></header>
       {error && <div className="notice error-notice" role="alert">{error}</div>}
       {notice && <div className="notice success-notice" role="status">{notice}</div>}
       <form className="panel job-form" onSubmit={saveProfile}>
         <h2>Recruiter and company details</h2>
+        {!loading && <div className="profile-photo-card">
+          <div className="profile-photo-preview">{photoUrl ? <img src={photoUrl} alt="Recruiter profile" /> : <span>{profile.name?.[0] || user.name?.[0] || 'R'}</span>}</div>
+          <div className="profile-photo-copy"><h3>Profile photo</h3><p>Upload a JPEG or PNG image up to 5 MB. It is stored securely in Cloudinary.</p><button type="button" className="secondary-button compact-button" onClick={() => photoInputRef.current?.click()} disabled={saving}>{saving ? 'Uploading…' : profile.photoPath ? 'Change photo' : 'Upload photo'}</button><input ref={photoInputRef} className="profile-photo-input" type="file" accept="image/jpeg,image/png" onChange={uploadPhoto} /></div>
+        </div>}
         {loading ? <p className="muted-copy">Loading your company profile…</p> : <>
           <div className="form-grid">
             <label>Your name<input value={profile.name || ''} onChange={e=>setProfile({...profile,name:e.target.value})} required /></label>
@@ -1098,6 +1127,8 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [scheduleApplication, setScheduleApplication] = useState(null);
+  const [selectedApplicant, setSelectedApplicant] = useState(null);
+  const [selectedApplicantPhotoUrl, setSelectedApplicantPhotoUrl] = useState('');
   const [scheduleForm, setScheduleForm] = useState({ scheduledAt: '', timeZone: '', details: '', message: '' });
   const [scheduling, setScheduling] = useState(false);
   const [scheduleError, setScheduleError] = useState('');
@@ -1189,6 +1220,25 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
       const link = document.createElement('a'); link.href = url; link.download = `${application.candidateName}-resume.pdf`; link.click();
       URL.revokeObjectURL(url);
     } catch (e) { setError(e.message); }
+  }
+
+  async function openApplicantDetails(application) {
+    setSelectedApplicant(application);
+    setSelectedApplicantPhotoUrl('');
+    if (!application.candidatePhotoAttached) return;
+    try {
+      const response = await fetch(`${API_URL}/api/applications/${application.id}/candidate-photo`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('smarthire_token')}` }
+      });
+      if (!response.ok) throw new Error('Could not load the candidate photo.');
+      setSelectedApplicantPhotoUrl(URL.createObjectURL(await response.blob()));
+    } catch (e) { setError(e.message); }
+  }
+
+  function closeApplicantDetails() {
+    if (selectedApplicantPhotoUrl) URL.revokeObjectURL(selectedApplicantPhotoUrl);
+    setSelectedApplicantPhotoUrl('');
+    setSelectedApplicant(null);
   }
 
   async function deleteJob(job) {
@@ -1390,6 +1440,7 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
                 {application.interviewScheduledAt && <p className="scheduled-interview-note"><strong>Interview scheduled</strong><span>{application.interviewScheduledAt.replace('T', ' ')} ({application.interviewTimeZone})</span><span>{application.interviewDetails}</span></p>}
               </div>
               <div className="applicant-controls">
+                <button className="text-button" onClick={()=>openApplicantDetails(application)}>View profile</button>
                 {application.resumeAttached && <button className="text-button" onClick={()=>downloadApplicantResume(application)}>Download resume</button>}
                 {screening?.matchScore != null && application.status !== 'SHORTLISTED' && <button className="text-button" onClick={()=>changeApplicationStatus(application.id,'SHORTLISTED')}>Shortlist</button>}
                 <select aria-label={`Status for ${application.candidateName}`} value={application.status} onChange={e=>changeApplicationStatus(application.id,e.target.value)}>
@@ -1414,6 +1465,17 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
           <label className="schedule-form-field">Message to candidate <span className="optional-label">Optional</span><textarea rows="3" value={scheduleForm.message} onChange={e=>setScheduleForm({...scheduleForm,message:e.target.value})} placeholder="Add any preparation details or a note" maxLength="2000" /></label>
           <div className="form-actions"><button className="primary-button compact-button" disabled={scheduling}>{scheduling ? 'Sending invitation…' : 'Send interview invitation'}</button><button type="button" className="secondary-button compact-button" disabled={scheduling} onClick={()=>setScheduleApplication(null)}>Cancel</button></div>
         </form>
+      </div>}
+      {selectedApplicant && <div className="modal-backdrop" role="presentation" onClick={(event)=>{if(event.target===event.currentTarget)closeApplicantDetails();}}>
+        <section className="apply-modal applicant-profile-modal" role="dialog" aria-modal="true" aria-labelledby="candidate-profile-title">
+          <button type="button" className="modal-close" aria-label="Close" onClick={closeApplicantDetails}>×</button>
+          <p className="eyebrow">CANDIDATE PROFILE</p>
+          <div className="candidate-profile-heading"><div className="profile-photo-preview">{selectedApplicantPhotoUrl ? <img src={selectedApplicantPhotoUrl} alt={`${selectedApplicant.candidateName} profile`} /> : <span>{selectedApplicant.candidateName?.[0] || 'C'}</span>}</div><div><h2 id="candidate-profile-title">{selectedApplicant.candidateName}</h2><p>{selectedApplicant.candidateEmail}</p></div></div>
+          <div className="candidate-profile-details">
+            <p><b>Phone:</b> {selectedApplicant.candidatePhone || 'Not provided'}</p><p><b>Location:</b> {selectedApplicant.candidateLocation || 'Not provided'}</p><p><b>Education:</b> {selectedApplicant.candidateEducation || 'Not provided'}</p><p><b>Skills:</b> {selectedApplicant.candidateSkills || 'Not provided'}</p><p><b>Experience:</b> {selectedApplicant.candidateExperience || 'Not provided'}</p><p><b>Professional summary:</b> {selectedApplicant.candidateProfessionalSummary || 'Not provided'}</p>
+          </div>
+          <div className="form-actions">{selectedApplicant.resumeAttached && <button className="secondary-button compact-button" onClick={()=>downloadApplicantResume(selectedApplicant)}>Download resume</button>}<button className="primary-button compact-button" onClick={closeApplicantDetails}>Close</button></div>
+        </section>
       </div>}
     </main>
   );

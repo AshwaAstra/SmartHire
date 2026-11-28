@@ -11,5 +11,5 @@ public class ProfileDtos {
     public record RecruiterProfile(
             @NotBlank String name, @NotBlank String email, String phone,
             @NotBlank @Size(max=150) String companyName, String companyDescription,
-            String companyWebsite, String companyLocation) {}
+            String companyWebsite, String companyLocation, String photoPath) {}
 }

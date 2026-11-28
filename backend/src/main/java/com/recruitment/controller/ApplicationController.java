@@ -195,6 +195,14 @@ public class ApplicationController {
         if(path==null) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"This application was submitted manually");
         return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF).body(fileStorage.read(path));
     }
+    @GetMapping("/{id}/candidate-photo") @PreAuthorize("hasRole('RECRUITER') or hasRole('ADMIN')")
+    public ResponseEntity<byte[]> candidatePhoto(@PathVariable Long id, Authentication auth) throws Exception {
+        Application application=applications.findById(id).orElseThrow();
+        ensureJobOwner(application.getJob(),auth);
+        String path=application.getCandidate().getPhotoPath();
+        if(path==null) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(fileStorage.contentType(path))).body(fileStorage.read(path));
+    }
     private void ensureJobOwner(Job job,Authentication auth) {
         if (auth.getAuthorities().stream().noneMatch(a -> a.getAuthority().equals("ROLE_ADMIN"))
                 && !job.getRecruiter().getUser().getEmail().equals(auth.getName())) {
