@@ -16,13 +16,26 @@ export async function api(path, options = {}) {
   try {
     response = await fetch(`${API_URL}${path}`, { ...options, headers });
   } catch (error) {
-    if (error?.name === 'AbortError') {
+    const method = (options.method || 'GET').toUpperCase();
+    // Render can briefly refuse the first connection while a free instance wakes.
+    // Retry only read-only requests so posting, saving, and deleting are never duplicated.
+    if (error instanceof TypeError && (method === 'GET' || method === 'HEAD')) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      try {
+        response = await fetch(`${API_URL}${path}`, { ...options, headers });
+      } catch (retryError) {
+        error = retryError;
+      }
+    }
+    if (response) {
+      // Continue through the normal HTTP status and JSON handling below.
+    } else if (error?.name === 'AbortError') {
       throw new Error(`The backend did not respond in time. Check the server and database connection at ${API_URL}.`);
-    }
-    if (error instanceof TypeError) {
+    } else if (error instanceof TypeError) {
       throw new Error(`Cannot reach the backend at ${API_URL} from ${window.location.origin}. Check that it is running and this exact origin is allowed in CORS_ALLOWED_ORIGINS.`);
+    } else {
+      throw error;
     }
-    throw error;
   }
   if (response.status === 401 && token) {
     localStorage.removeItem('smarthire_token');
