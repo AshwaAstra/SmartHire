@@ -8,6 +8,7 @@ public class Recruiter {
     @OneToOne(optional=false) @JoinColumn(name="user_id", unique=true) private User user;
     private String companyName; @Column(columnDefinition="TEXT") private String companyDescription;
     private String companyWebsite; private String companyLocation;
+    private String phone;
     private String photoPath;
     public Long getId(){return id;} public void setId(Long id){this.id=id;}
     public User getUser(){return user;} public void setUser(User user){this.user=user;}
@@ -15,5 +16,6 @@ public class Recruiter {
     public String getCompanyDescription(){return companyDescription;} public void setCompanyDescription(String value){this.companyDescription=value;}
     public String getCompanyWebsite(){return companyWebsite;} public void setCompanyWebsite(String value){this.companyWebsite=value;}
     public String getCompanyLocation(){return companyLocation;} public void setCompanyLocation(String value){this.companyLocation=value;}
+    public String getPhone(){return phone;} public void setPhone(String value){this.phone=value;}
     public String getPhotoPath(){return photoPath;} public void setPhotoPath(String value){this.photoPath=value;}
 }

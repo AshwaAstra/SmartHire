@@ -985,6 +985,28 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .recruiter-main .managed-job-row { margin-top: 12px; padding: 17px; border: 1px solid #e7edf4; border-radius: 13px; background: #fff; }
 .recruiter-main .managed-job-info > strong { color: #1c4f8e; font-size: .97rem; }
 .recruiter-main .job-form { margin-bottom: 0; }
+.recruiter-posting-form { border-top: 3px solid #5e86d7 !important; }
+.posting-form-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 21px; }
+.posting-form-heading .eyebrow { margin: 0 0 5px; }
+.posting-form-heading h2 { margin: 0 0 5px; }
+.posting-form-heading p:not(.eyebrow) { margin: 0; color: #71809a; font-size: .9rem; }
+.posting-form-badge { flex: 0 0 auto; border: 1px solid #dbe8fb; border-radius: 999px; padding: 7px 10px; background: #f1f6ff; color: #2865b3; font-size: .78rem; font-weight: 750; }
+.job-location-action { align-content: start; }
+.job-location-action > span { color: #475467; font-size: .88rem; font-weight: 650; }
+.job-location-action small { margin-top: 2px; color: #76859b; font-size: .76rem; line-height: 1.4; }
+.recruiter-posting-form label:has(+ .experience-option-field) { display: none; }
+.recruiter-job-list-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
+.recruiter-job-list-heading h2 { margin: 0; }
+.recruiter-job-list-heading p { margin: 5px 0 0; color: #71809a; font-size: .86rem; }
+.bulk-job-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.bulk-job-picker { width: min(230px, 100%); min-height: 45px; padding: 6px 9px; border: 1px solid #d7e1ef; border-radius: 9px; color: #27476b; background: #fbfdff; font: inherit; font-size: .82rem; }
+.bulk-job-picker option { padding: 4px; }
+.danger-button { display: inline-flex; align-items: center; justify-content: center; min-height: 38px; padding: 0 14px; border: 1px solid #edb9b3; border-radius: 9px; background: #fff5f4; color: #b42318; font-weight: 700; cursor: pointer; }
+.danger-button:hover:not(:disabled) { background: #fee4e2; }
+.danger-button:disabled { opacity: .55; cursor: not-allowed; }
+.notice { display: flex; align-items: center; gap: 10px; min-height: 48px; border-radius: 12px; box-shadow: 0 5px 16px rgba(31,54,83,.045); animation: smartHireEnter .25s ease-out both; }
+.success-notice::before { content: '✓'; display: inline-grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: #d1fadf; color: #087443; font-weight: 800; }
+.error-notice::before { content: '!'; display: inline-grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: #fee4e2; color: #b42318; font-weight: 800; }
 .recruiter-main .applicant-row { margin-top: 10px; padding: 16px; border: 1px solid #e7edf4; border-radius: 12px; background: #fff; }
 .recruiter-main .applicant-row strong { color: #26496d; }
 .recruiter-main .applicant-controls select { min-height: 38px; border-color: #d8e1eb; border-radius: 8px; color: #405a77; }

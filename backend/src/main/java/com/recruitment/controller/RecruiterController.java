@@ -37,13 +37,13 @@ public class RecruiterController {
     @GetMapping("/profile")
     public RecruiterProfile profile(Authentication authentication){
         User u=users.findByEmail(authentication.getName()).orElseThrow(); Recruiter r=current(authentication);
-        return new RecruiterProfile(u.getName(),u.getEmail(),"",r.getCompanyName(),r.getCompanyDescription(),r.getCompanyWebsite(),r.getCompanyLocation(),r.getPhotoPath());
+        return new RecruiterProfile(u.getName(),u.getEmail(),r.getPhone(),r.getCompanyName(),r.getCompanyDescription(),r.getCompanyWebsite(),r.getCompanyLocation(),r.getPhotoPath());
     }
     @PutMapping("/profile")
     public RecruiterProfile update(@Valid @RequestBody RecruiterProfile req, Authentication authentication){
         User u=users.findByEmail(authentication.getName()).orElseThrow(); Recruiter r=current(authentication);
         u.setName(req.name()); users.save(u);
-        r.setCompanyName(req.companyName().trim()); r.setCompanyDescription(req.companyDescription());
+        r.setPhone(req.phone()); r.setCompanyName(req.companyName().trim()); r.setCompanyDescription(req.companyDescription());
         r.setCompanyWebsite(req.companyWebsite()); r.setCompanyLocation(req.companyLocation()); recruiters.save(r);
         return profile(authentication);
     }

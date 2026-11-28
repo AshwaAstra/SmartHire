@@ -171,14 +171,14 @@ function RecruiterProfilePage() {
         <Link to="/recruiter">Overview</Link>
         <Link to="/recruiter/jobs">Manage jobs</Link>
         <Link to="/recruiter/jobs">Post a job</Link>
-        <Link className="active" to="/recruiter/profile">Company profile</Link>
+        <Link className="active" to="/recruiter/profile">My profile</Link>
         <Link to="/account/password">Change password</Link>
       </nav>
       <div className="sidebar-account"><span>Signed in as</span><strong>{user.name || user.email || 'Recruiter'}</strong><small>Recruiter</small></div>
       <button className="signout-button" onClick={logout}>Sign out</button>
     </aside>
     <section className="dashboard-main recruiter-main">
-      <header><div><p>Recruiter workspace</p><h1>Company profile</h1></div><div className={`avatar${photoUrl ? ' has-photo' : ''}`}>{photoUrl ? <img src={photoUrl} alt="Recruiter profile" /> : (user.name?.[0] || 'R')}</div></header>
+      <header><div><p>Recruiter workspace</p><h1>My profile</h1></div><div className={`avatar${photoUrl ? ' has-photo' : ''}`}>{photoUrl ? <img src={photoUrl} alt="Recruiter profile" /> : (user.name?.[0] || 'R')}</div></header>
       {error && <div className="notice error-notice" role="alert">{error}</div>}
       {notice && <div className="notice success-notice" role="status">{notice}</div>}
       <form className="panel job-form" onSubmit={saveProfile}>
@@ -191,6 +191,7 @@ function RecruiterProfilePage() {
           <div className="form-grid">
             <label>Your name<input value={profile.name || ''} onChange={e=>setProfile({...profile,name:e.target.value})} required /></label>
             <label>Account email<input value={profile.email || ''} readOnly /></label>
+            <label>Phone number<input type="tel" value={profile.phone || ''} onChange={e=>setProfile({...profile,phone:e.target.value})} placeholder="e.g. +91 98765 43210" /></label>
             <label>Company name<input value={profile.companyName || ''} onChange={e=>setProfile({...profile,companyName:e.target.value})} maxLength="150" required /></label>
             <label>Company location<input value={profile.companyLocation || ''} onChange={e=>setProfile({...profile,companyLocation:e.target.value})} /></label>
             <label>Company website<input type="url" value={profile.companyWebsite || ''} onChange={e=>setProfile({...profile,companyWebsite:e.target.value})} placeholder="https://example.com" /></label>
@@ -1335,16 +1336,40 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [notice, setNotice] = useState('');
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [selectedJobIds, setSelectedJobIds] = useState(() => new Set());
+  const [deletingJobs, setDeletingJobs] = useState(false);
   const [form, setForm] = useState(emptyJobForm());
 
   function emptyJobForm() {
-    return { title: '', description: '', requiredSkills: '', qualification: '', experience: '',
-      location: '', employmentType: 'Full time', salaryRange: '', applicationDeadline: '' };
+    return { title: '', description: '', requiredSkills: '', qualification: 'Any qualification', experience: '0 years',
+      location: '', employmentType: 'Full time', salaryRange: 'Not disclosed', applicationDeadline: '' };
   }
 
   async function loadJobs() {
     const data = await api('/api/jobs/mine');
     setJobs(data);
+    setSelectedJobIds((current) => new Set([...current].filter((id) => data.some((job) => job.id === id))));
+  }
+
+  function useCurrentJobLocation() {
+    if (!navigator.geolocation) { setError('Location is not supported by this browser.'); return; }
+    setLocationLoading(true); setError('');
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${coords.latitude}&lon=${coords.longitude}`);
+        const place = response.ok ? await response.json() : null;
+        const address = place?.address || {};
+        const location = [address.city || address.town || address.village || address.county, address.state, address.country]
+          .filter(Boolean).join(', ') || `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`;
+        setForm((current) => ({ ...current, location }));
+        setNotice('Current job location added. You can edit it before publishing.');
+      } catch { setError('Could not identify your current location. Enter it manually.'); }
+      finally { setLocationLoading(false); }
+    }, (locationError) => {
+      setLocationLoading(false);
+      setError(locationError.code === 1 ? 'Allow browser location access, then try again.' : 'Could not get your current location.');
+    }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
   }
 
   useEffect(() => {
@@ -1374,10 +1399,10 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
     setEditingId(job.id);
     setForm({
       title: job.title || '', description: job.description || '',
-      requiredSkills: job.requiredSkills || '', qualification: job.qualification || '',
-      experience: job.experience || '', location: job.location || '',
-      employmentType: job.employmentType || 'Full time', salaryRange: job.salaryRange || '',
-      applicationDeadline: job.applicationDeadline || ''
+      requiredSkills: job.requiredSkills || '',
+      experience: job.experience || '0 years', location: job.location || '',
+      employmentType: job.employmentType || 'Full time',
+      qualification: job.qualification || 'Any qualification', salaryRange: job.salaryRange || 'Not disclosed', applicationDeadline: job.applicationDeadline || ''
     });
     setShowForm(true);
     setView('jobs');
@@ -1443,12 +1468,41 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
 
   async function deleteJob(job) {
     if (!window.confirm(`Delete "${job.title}"?`)) return;
+    setError(''); setNotice('');
     try {
       await api(`/api/jobs/${job.id}`, { method: 'DELETE' });
+      setJobs((current) => current.filter((item) => item.id !== job.id));
+      setSelectedJobIds((current) => { const next = new Set(current); next.delete(job.id); return next; });
       setNotice('Job posting deleted.');
-      await loadJobs();
       setStats(await api('/api/analytics/recruiter'));
     } catch (e) { setError(e.message); }
+  }
+
+  function toggleJobSelection(jobId) {
+    setSelectedJobIds((current) => {
+      const next = new Set(current);
+      if (next.has(jobId)) next.delete(jobId); else next.add(jobId);
+      return next;
+    });
+  }
+
+  function selectAllJobs() {
+    setSelectedJobIds((current) => current.size === jobs.length ? new Set() : new Set(jobs.map((job) => job.id)));
+  }
+
+  async function deleteSelectedJobs() {
+    if (!selectedJobIds.size || !window.confirm(`Delete ${selectedJobIds.size} selected job posting${selectedJobIds.size === 1 ? '' : 's'}?`)) return;
+    setDeletingJobs(true); setError(''); setNotice('');
+    const ids = [...selectedJobIds];
+    const results = await Promise.allSettled(ids.map((id) => api(`/api/jobs/${id}`, { method: 'DELETE' })));
+    const failed = results.filter((result) => result.status === 'rejected');
+    const deletedIds = ids.filter((_, index) => results[index].status === 'fulfilled');
+    setJobs((current) => current.filter((job) => !deletedIds.includes(job.id)));
+    setSelectedJobIds(new Set());
+    if (failed.length) setError(`${failed.length} selected job posting${failed.length === 1 ? '' : 's'} could not be deleted. Refresh and try again.`);
+    else setNotice(`${deletedIds.length} job posting${deletedIds.length === 1 ? '' : 's'} deleted successfully.`);
+    try { setStats(await api('/api/analytics/recruiter')); } catch {}
+    finally { setDeletingJobs(false); }
   }
 
   async function changeApplicationStatus(applicationId, status) {
@@ -1548,7 +1602,7 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
           <button className={view === 'overview' ? 'active' : ''} onClick={() => setView('overview')}>Overview</button>
           <button className={view === 'jobs' ? 'active' : ''} onClick={() => { setView('jobs'); setShowForm(false); }}>Manage jobs</button>
           <button onClick={() => { setShowForm(true); setEditingId(null); setForm(emptyJobForm()); setView('jobs'); }}>Post a job</button>
-          <Link to="/recruiter/profile">Company profile</Link>
+          <Link to="/recruiter/profile">My profile</Link>
           <Link to="/account/password">Change password</Link>
         </nav>
         <div className="sidebar-account">
@@ -1592,26 +1646,28 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
             <p>Review and update your openings and applicants.</p>
             {!showForm && <button className="primary-button compact-button" onClick={() => { setEditingId(null); setForm(emptyJobForm()); setShowForm(true); }}>+ Post a job</button>}
           </div>
-          {showForm && <form className="panel job-form" onSubmit={saveJob}>
-            <h2>{editingId ? 'Edit job posting' : 'Create a job posting'}</h2>
+          {showForm && <form className="panel job-form recruiter-posting-form" onSubmit={saveJob}>
+            <div className="posting-form-heading"><div><p className="eyebrow">OPENING DETAILS</p><h2>{editingId ? 'Edit job posting' : 'Create a job posting'}</h2><p>Clear fields help candidates find and match with your role.</p></div><span className="posting-form-badge">{editingId ? 'Editing' : 'New opening'}</span></div>
             <div className="form-grid">
-              <label>Job title<input value={form.title} onChange={e=>setForm({...form,title:e.target.value})} required /></label>
-              <label>Location<input value={form.location} onChange={e=>setForm({...form,location:e.target.value})} placeholder="e.g. Bengaluru / Remote" /></label>
-              <label>Employment type<select value={form.employmentType} onChange={e=>setForm({...form,employmentType:e.target.value})}><option>Full time</option><option>Part time</option><option>Contract</option><option>Internship</option></select></label>
+              <label>Job title<input value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="e.g. Java Full Stack Developer" required /></label>
+              <label>Job location<input value={form.location} onChange={e=>setForm({...form,location:e.target.value})} placeholder="City, state, country or Remote" /></label>
+              <div className="location-action-field job-location-action"><span>Live location</span><button type="button" className="secondary-button compact-button" onClick={useCurrentJobLocation} disabled={locationLoading}>{locationLoading ? 'Finding location…' : 'Use my current location'}</button><small>Your browser asks permission before sharing the location.</small></div>
+              <label>Employment type<select value={form.employmentType} onChange={e=>setForm({...form,employmentType:e.target.value})}><option>Full time</option><option>Part time</option><option>Contract</option><option>Internship</option><option>Freelance</option></select></label>
               <label>Experience level<input value={form.experience} onChange={e=>setForm({...form,experience:e.target.value})} placeholder="e.g. 2–4 years" /></label>
+              <label className="experience-option-field">Experience level<select value={form.experience} onChange={e=>setForm({...form,experience:e.target.value})}><option>0 years</option><option>1 year</option><option>2 years</option><option>3 years</option><option>4 to 6 years</option><option>7+ years</option></select></label>
               <label>Required skills<input value={form.requiredSkills} onChange={e=>setForm({...form,requiredSkills:e.target.value})} placeholder="Java, Spring Boot, SQL" /></label>
-              <label>Qualifications<input value={form.qualification} onChange={e=>setForm({...form,qualification:e.target.value})} /></label>
-              <label>Salary range<input value={form.salaryRange} onChange={e=>setForm({...form,salaryRange:e.target.value})} placeholder="Optional" /></label>
+              <label>Qualifications<select value={form.qualification} onChange={e=>setForm({...form,qualification:e.target.value})}><option>Any qualification</option><option>10th / High school</option><option>Diploma</option><option>ITI</option><option>BCA</option><option>B.Sc</option><option>B.Tech / BE</option><option>MCA</option><option>M.Tech / ME</option><option>MBA</option><option>Any bachelor’s degree</option><option>Any master’s degree</option></select></label>
+              <label>Salary range<select value={form.salaryRange} onChange={e=>setForm({...form,salaryRange:e.target.value})}><option>Not disclosed</option><option>₹2–3 LPA</option><option>₹3–5 LPA</option><option>₹5–8 LPA</option><option>₹8–12 LPA</option><option>₹12–18 LPA</option><option>₹18+ LPA</option><option>Hourly / negotiable</option></select></label>
               <label>Application deadline<input type="date" value={form.applicationDeadline} onChange={e=>setForm({...form,applicationDeadline:e.target.value})} /></label>
-              <label className="full-width">Job description<textarea rows="5" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} required /></label>
+              <label className="full-width">Job description<textarea rows="5" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Describe responsibilities, the role, and what candidates will work on." required /></label>
             </div>
             <div className="form-actions">
-              <button className="primary-button compact-button" type="submit">{editingId ? 'Save changes' : 'Publish job'}</button>
+              <button className="primary-button compact-button" type="submit">{editingId ? 'Save job changes' : 'Publish opening'}</button>
               <button className="secondary-button compact-button" type="button" onClick={()=>{setShowForm(false);setEditingId(null);setForm(emptyJobForm());}}>Cancel</button>
             </div>
           </form>}
-          <section className="panel">
-            <h2>Your postings <span className="count-badge">{jobs.length}</span></h2>
+          <section className="panel recruiter-job-list">
+            <div className="recruiter-job-list-heading"><div><h2>Your postings <span className="count-badge">{jobs.length}</span></h2><p>Select openings to delete multiple postings at once.</p></div>{jobs.length > 0 && <div className="bulk-job-actions"><select className="bulk-job-picker" multiple value={[...selectedJobIds].map(String)} onChange={event => setSelectedJobIds(new Set([...event.target.selectedOptions].map((option) => Number(option.value))))} aria-label="Select job postings to delete">{jobs.map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}</select><button type="button" className="secondary-button compact-button" onClick={selectAllJobs}>{selectedJobIds.size === jobs.length ? 'Clear selection' : 'Select all'}</button><button type="button" className="danger-button compact-button" disabled={!selectedJobIds.size || deletingJobs} onClick={deleteSelectedJobs}>{deletingJobs ? 'Deleting…' : `Delete selected${selectedJobIds.size ? ` (${selectedJobIds.size})` : ''}`}</button></div>}</div>
             {jobs.length ? jobs.map((job) => <JobRow key={job.id} job={job} onApplicants={openApplicants} onEdit={startEdit} onToggle={toggleJob} onDelete={deleteJob} />) : <p className="empty-state">No job postings yet. Use “Post a job” to add your first opening.</p>}
           </section>
         </>}
@@ -1682,9 +1738,10 @@ function RecruiterWorkspace({ initialView = 'overview' }) {
   );
 }
 
-function JobRow({ job, onApplicants, onEdit, onToggle, onDelete }) {
+function JobRow({ job, selected = false, onSelect, onApplicants, onEdit, onToggle, onDelete }) {
   return (
-    <article className="managed-job-row">
+    <article className={`managed-job-row${selected ? ' selected' : ''}`}>
+      {onSelect && <label className="job-select-control"><input type="checkbox" checked={selected} onChange={() => onSelect(job.id)} aria-label={`Select ${job.title}`} /><span>Select</span></label>}
       <div className="managed-job-info">
         <strong>{job.title}</strong>
         <p>{job.location || 'Location not specified'} · {job.employmentType || 'Employment type not specified'} · {job.experience || 'Experience not specified'}</p>
