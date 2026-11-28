@@ -176,15 +176,21 @@ function AuthPage({ mode }) {
       : '';
   const submit = async (event) => {
     event.preventDefault(); setBusy(true); setError('');
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 30000);
     try {
       const data = await api(`/api/auth/${mode}`, {
         method: 'POST',
-        body: JSON.stringify(mode === 'register' ? form : { email: form.email, password: form.password })
+        body: JSON.stringify(mode === 'register' ? form : { email: form.email, password: form.password }),
+        signal: controller.signal
       });
       localStorage.setItem('smarthire_token', data.token);
       localStorage.setItem('smarthire_user', JSON.stringify(data));
       navigate(data.role === 'CANDIDATE' ? '/candidate' : data.role === 'RECRUITER' ? '/recruiter' : '/admin');
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
+    } catch (e) { setError(e.message); } finally {
+      window.clearTimeout(timeoutId);
+      setBusy(false);
+    }
   };
   const isLogin = mode === 'login';
   return <main className="auth-page">

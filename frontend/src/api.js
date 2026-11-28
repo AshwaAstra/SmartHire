@@ -7,7 +7,18 @@ export async function api(path, options = {}) {
   if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
-  const response = await fetch(`${API_URL}${path}`, { ...options, headers });
+  let response;
+  try {
+    response = await fetch(`${API_URL}${path}`, { ...options, headers });
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error(`The backend did not respond in time. Check the server and database connection at ${API_URL}.`);
+    }
+    if (error instanceof TypeError) {
+      throw new Error(`Cannot reach the backend at ${API_URL}. Check that it is running and allows this frontend origin.`);
+    }
+    throw error;
+  }
   if (response.status === 401 && token) {
     localStorage.removeItem('smarthire_token');
     localStorage.removeItem('smarthire_user');
