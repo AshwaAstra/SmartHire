@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { api, API_URL } from './api';
+import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 
 function Landing() {
   return (
@@ -306,6 +307,7 @@ function CandidateWorkspace({ initialView = 'overview' }) {
   const [coverLetter, setCoverLetter] = useState('');
   const [analysis, setAnalysis] = useState(null);
   const [analysisHistory, setAnalysisHistory] = useState([]);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
   const [match, setMatch] = useState(null);
   const [matchHistory, setMatchHistory] = useState([]);
   const [questions, setQuestions] = useState(null);
@@ -481,9 +483,14 @@ function CandidateWorkspace({ initialView = 'overview' }) {
   }
 
   async function analyzeResume() {
-    setBusy(true);
-    try { setAnalysis(await api('/api/ai/resume/analyze', { method: 'POST' })); setAnalysisHistory(await api('/api/ai/resume/analyses')); setView('resume'); }
-    catch (e) { showError(e.message); } finally { setBusy(false); }
+    if (analysisLoading) return;
+    setBusy(true); setAnalysisLoading(true);
+    try {
+      const result = await api('/api/ai/resume/analyze', { method: 'POST' });
+      setAnalysis(result);
+      setAnalysisHistory(await api('/api/ai/resume/analyses'));
+      setView('resume');
+    } catch (e) { showError(e.message); } finally { setBusy(false); setAnalysisLoading(false); }
   }
 
   async function submitApplication() {
@@ -820,17 +827,10 @@ function CandidateWorkspace({ initialView = 'overview' }) {
             {profile?.resumePath && <button className="text-button" onClick={openResume}>View current resume</button>}
           </section>
           <section className="panel">
-            <div className="section-heading"><div><h2>AI resume analysis</h2><p className="muted-copy">Get feedback based on the content of your actual resume.</p></div><button className="primary-button compact-button" onClick={analyzeResume} disabled={!profile?.resumePath || busy}>{busy ? 'Analyzing…' : 'Analyze resume'}</button></div>
+            <div className="section-heading"><div><h2>AI resume analysis</h2><p className="muted-copy">Get feedback based on the content of your actual resume.</p></div><button className="primary-button compact-button" onClick={analyzeResume} disabled={!profile?.resumePath || analysisLoading}>{analysisLoading ? 'Analyzing…' : analysis ? 'Refresh analysis' : 'Analyze resume'}</button></div>
             {!profile?.resumePath && <p className="empty-state">Upload your PDF to enable resume analysis.</p>}
-            {analysis && <JsonResult data={analysis} variant="resume-analysis" />}
-            {!!analysisHistory.length && <div className="history-section"><h3>Previous analysis results</h3>{analysisHistory.map((item)=><article className="history-card" key={item.id}>
-              <strong>Resume score: {item.resumeScore == null ? 'Not available in this older result' : `${item.resumeScore}/100`}</strong><small>{new Date(item.analyzedAt).toLocaleString()}</small>
-              <div className="analysis-history-details">
-                <div><strong>Skills</strong><StructuredResultValue value={item.extractedSkills} skillMode /></div>
-                <div><strong>Strengths</strong><StructuredResultValue value={item.strengths} /></div>
-                <div><strong>Improvements</strong><StructuredResultValue value={item.suggestions} /></div>
-              </div>
-            </article>)}</div>}
+            {analysis && <ResumeAnalysisDashboard data={analysis} />}
+            {!analysis && analysisHistory.length > 0 && <ResumeAnalysisDashboard data={{ resumeQualityScore: analysisHistory[0].resumeScore, technicalSkills: analysisHistory[0].extractedSkills, strengths: analysisHistory[0].strengths, recommendedImprovements: analysisHistory[0].suggestions, weaknesses: analysisHistory[0].weaknesses }} />}
           </section>
         </>}
 
@@ -1073,6 +1073,27 @@ function JsonResult({ data, variant }) {
       </article>
     ))}
   </div>;
+}
+
+function ResumeAnalysisDashboard({ data }) {
+  if (!data) return null;
+  const score = Number(data.atsScore ?? data.resumeQualityScore ?? data.score);
+  const validScore = Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : null;
+  const strengths = data.strengths ?? data.keyStrengths ?? [];
+  const improvements = data.recommendedImprovements ?? data.improvements ?? data.weaknesses ?? [];
+  return <section className="resume-analysis-dashboard">
+    <div className="resume-analysis-hero">
+      <div><span className="eyebrow">RESUME HEALTH</span><h3>ATS compatibility</h3><p>Score reflects structure, readability, skills and ATS readiness.</p></div>
+      <div className="ats-chart-wrap">
+        {validScore == null ? <div className="ats-score-empty">—<small>Run analysis</small></div> : <><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={[{value:validScore},{value:100-validScore}]} dataKey="value" innerRadius="72%" outerRadius="95%" startAngle={90} endAngle={-270} stroke="none"><Cell fill="#3569d4"/><Cell fill="#e7edf7"/></Pie></PieChart></ResponsiveContainer><div className="ats-score-center"><strong>{validScore}</strong><span>/100</span></div></>}
+      </div>
+    </div>
+    <div className="resume-analysis-cards">
+      <article><h4>Strengths</h4><StructuredResultValue value={strengths}/></article>
+      <article><h4>Improvements</h4><StructuredResultValue value={improvements}/></article>
+      <article><h4>Skills found</h4><StructuredResultValue value={data.technicalSkills ?? data.skills} skillMode/></article>
+    </div>
+  </section>;
 }
 
 function StructuredResultValue({ value, skillMode = false }) {

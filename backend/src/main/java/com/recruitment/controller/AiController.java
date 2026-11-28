@@ -42,16 +42,17 @@ public class AiController {
         }else if(c.getResumePath()!=null){try(PDDocument doc=Loader.loadPDF(fileStorage.read(c.getResumePath()))){text=new PDFTextStripper().getText(doc);}
         }else throw new IllegalArgumentException("Upload a PDF resume first");
         JsonNode result=ai.analyzeResume(text);
-        ResumeAnalysis analysis=new ResumeAnalysis();
+        ResumeAnalysis analysis=analyses.findFirstByCandidateOrderByAnalyzedAtDesc(c).orElseGet(ResumeAnalysis::new);
         analysis.setCandidate(c);
         JsonNode score=result.path("resumeQualityScore");
         if (!score.isNumber()) score=result.path("atsScore");
         if (!score.isNumber()) score=result.path("score");
+        if (!score.isNumber()) score=result.path("resume_quality_score");
         if(score.isNumber()) analysis.setResumeScore(Math.max(0,Math.min(100,score.asInt())));
-        analysis.setExtractedSkills(asText(result.path("technicalSkills")));
-        analysis.setStrengths(asText(result.path("strengths")));
-        analysis.setWeaknesses(asText(result.path("weaknesses")));
-        analysis.setSuggestions(asText(result.path("recommendedImprovements")));
+        analysis.setExtractedSkills(firstText(result,"technicalSkills","skills"));
+        analysis.setStrengths(firstText(result,"strengths","keyStrengths"));
+        analysis.setWeaknesses(firstText(result,"weaknesses","areasForImprovement"));
+        analysis.setSuggestions(firstText(result,"recommendedImprovements","improvements","recommendations"));
         analyses.save(analysis);
         return result;
     }
@@ -141,6 +142,13 @@ public class AiController {
         }
     }
     private String asText(JsonNode node){return node==null||node.isMissingNode()||node.isNull()?"":node.isTextual()?node.asText():node.toString();}
+    private String firstText(JsonNode result,String... keys) {
+        for(String key:keys) {
+            JsonNode value=result.path(key);
+            if(!value.isMissingNode()&&!value.isNull()&&!value.isEmpty()) return asText(value);
+        }
+        return "";
+    }
     private String improvedText(JsonNode result) {
         StringBuilder text=new StringBuilder();
         appendSection(text,"Professional summary",result.path("improvedProfessionalSummary"));

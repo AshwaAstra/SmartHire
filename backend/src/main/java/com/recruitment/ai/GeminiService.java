@@ -39,11 +39,25 @@ public class GeminiService implements AiService {
         if (apiKey == null || apiKey.isBlank())
             throw new ResponseStatusException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
                     "GEMINI_API_KEY is not configured");
+        Map<String,Object> schemaProperties=Map.ofEntries(
+                Map.entry("professionalSummary", Map.of("type", "string")),
+                Map.entry("technicalSkills", Map.of("type", "array", "items", Map.of("type", "string"))),
+                Map.entry("education", Map.of("type", "array", "items", Map.of("type", "string"))),
+                Map.entry("workExperience", Map.of("type", "array", "items", Map.of("type", "string"))),
+                Map.entry("projects", Map.of("type", "array", "items", Map.of("type", "string"))),
+                Map.entry("strengths", Map.of("type", "array", "items", Map.of("type", "string"))),
+                Map.entry("weaknesses", Map.of("type", "array", "items", Map.of("type", "string"))),
+                Map.entry("missingSkills", Map.of("type", "array", "items", Map.of("type", "string"))),
+                Map.entry("resumeQualityScore", Map.of("type", "integer")),
+                Map.entry("atsScore", Map.of("type", "integer")),
+                Map.entry("formattingSuggestions", Map.of("type", "array", "items", Map.of("type", "string"))),
+                Map.entry("recommendedImprovements", Map.of("type", "array", "items", Map.of("type", "string"))));
         Map<String,Object> body=Map.of(
                 "model", model,
                 "input", prompt+"\\nReturn only valid JSON. Do not wrap the JSON in markdown.",
                 "response_format", Map.of("type", "text", "mime_type", "application/json",
-                        "schema", Map.of("type", "object")));
+                        "schema", Map.of("type", "object", "properties", schemaProperties,
+                                "required", List.of("professionalSummary", "technicalSkills", "education", "workExperience", "projects", "strengths", "weaknesses", "missingSkills", "resumeQualityScore", "atsScore", "formattingSuggestions", "recommendedImprovements"))));
         String json=generateContent(body, "Gemini API request");
         JsonNode root;
         try {
@@ -85,7 +99,7 @@ public class GeminiService implements AiService {
     }
 
     @Override public JsonNode analyzeResume(String resumeText) {
-        return generateJson("Analyze this real resume using only explicit facts. Return JSON keys: professionalSummary (string), technicalSkills (object or array), education (array), workExperience (array), projects (array), strengths (array), weaknesses (array), missingSkills (array), resumeQualityScore (integer 0-100), atsScore (integer 0-100), formattingSuggestions (array), recommendedImprovements (array). Provide resumeQualityScore and atsScore every time, using a fair rubric for readability, structure, measurable impact, skills relevance, and ATS parsing. Never invent resume facts. Resume:\\n"+resumeText);
+        return generateJson("Analyze this real resume using only explicit facts. Provide resumeQualityScore and atsScore from 0 to 100 using a fair rubric for readability, structure, measurable impact, skills relevance, and ATS parsing. Never invent resume facts. Resume:\\n"+resumeText);
     }
     @Override public JsonNode matchResumeWithJob(String resumeText,String jobDescription) {
         return generateJson("Compare the real resume with the real job description and produce keys: overallMatchPercentage, matchingSkills, missingSkills, relevantExperience, qualificationCompatibility, jobRequirementCompatibility, recommendations. Resume:\\n"+resumeText+"\\nJob:\\n"+jobDescription);

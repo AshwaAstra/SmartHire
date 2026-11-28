@@ -683,6 +683,21 @@ a { color: inherit; }
 .analysis-history-details .result-skill-groups { gap: 8px; }
 .analysis-history-details .result-skill-group > strong { font-size: .78rem; }
 .analysis-history-details .result-bullet-list { padding-left: 18px; }
+.resume-analysis-dashboard { margin-top: 18px; display: grid; gap: 14px; }
+.resume-analysis-hero { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 24px; border: 1px solid #dce7f8; border-radius: 16px; background: linear-gradient(120deg,#f4f8ff,#f9fbff 65%,#edf4ff); }
+.resume-analysis-hero h3 { margin: 5px 0; color: #183b6b; font-size: 1.2rem; }
+.resume-analysis-hero p { margin: 0; color: #62758f; }
+.ats-chart-wrap { position: relative; flex: 0 0 142px; width: 142px; height: 142px; }
+.ats-score-center,.ats-score-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #1e4f9a; }
+.ats-score-center strong { font-size: 2.1rem; line-height: 1; }
+.ats-score-center span { margin-top: 3px; color: #71819a; font-size: .8rem; }
+.ats-score-empty { font-size: 2rem; }
+.ats-score-empty small { color: #71819a; font-size: .7rem; }
+.resume-analysis-cards { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.resume-analysis-cards article { min-width: 0; padding: 16px; border: 1px solid #e4eaf3; border-radius: 13px; background: #fff; }
+.resume-analysis-cards h4 { margin: 0 0 10px; color: #344d70; }
+.resume-analysis-cards p { margin: 0; }
+@media(max-width:760px) { .resume-analysis-cards { grid-template-columns: 1fr; } .resume-analysis-hero { align-items: flex-start; padding: 16px; } .ats-chart-wrap { flex-basis: 112px; width: 112px; height: 112px; } }
 
 @media (max-width: 520px) {
   .profile-photo-card { align-items: flex-start; }
