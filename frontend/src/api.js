@@ -15,7 +15,7 @@ export async function api(path, options = {}) {
       throw new Error(`The backend did not respond in time. Check the server and database connection at ${API_URL}.`);
     }
     if (error instanceof TypeError) {
-      throw new Error(`Cannot reach the backend at ${API_URL}. Check that it is running and allows this frontend origin.`);
+      throw new Error(`Cannot reach the backend at ${API_URL} from ${window.location.origin}. Check that it is running and this exact origin is allowed in CORS_ALLOWED_ORIGINS.`);
     }
     throw error;
   }

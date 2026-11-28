@@ -174,7 +174,7 @@ Resumes, profile photos, and interview audio/video are stored in Cloudinary. Kee
 Create a Render Blueprint from the repository root using [render.yaml](./render.yaml). It configures the Docker service, health check, Cloudinary storage, and prompts for the Supabase, Cloudinary, CORS, and Ollama settings. Render generates `JWT_SECRET` automatically. The same settings can be entered manually when creating a Docker Web Service with `backend/Dockerfile` and `backend` as the Docker build context.
 
 - `JWT_SECRET`: a unique, random secret (at least 32 bytes); do not use the development default.
-- `CORS_ALLOWED_ORIGINS`: the exact Vercel frontend origin, e.g. `https://your-app.vercel.app` (no trailing slash).
+- `CORS_ALLOWED_ORIGINS`: comma-separated, exact trusted frontend origins (no trailing slash). Include the Vercel origin and local origins only when using the deployed backend from local development.
 - `OLLAMA_BASE_URL`: for Ollama Cloud, use `https://ollama.com`. The backend calls its `/api/chat` endpoint.
 - `OLLAMA_API_KEY`: your Ollama Cloud API key. Keep it secret; the backend sends it as a bearer token.
 - `OLLAMA_MODEL` and `OLLAMA_INTERVIEW_MODEL`: both default to `deepseek-v4.1-flash:cloud`, a cloud model listed by Ollama. Confirm its availability and current pricing in the [Ollama model catalog](https://ollama.com/library/deepseek-v4.1-flash) before using it.
@@ -187,7 +187,7 @@ Import the repository into Vercel and set the project **Root Directory** to `fro
 
 - `VITE_API_URL`: the public Render backend URL, for example `https://your-api.onrender.com`.
 
-The included `frontend/vercel.json` sends client-side routes back to the React app entry point. After the first Vercel deployment, copy its exact production origin into Render's `CORS_ALLOWED_ORIGINS`, then redeploy the backend.
+The included `frontend/vercel.json` sends client-side routes back to the React app entry point. Ensure the exact production origin is in Render's `CORS_ALLOWED_ORIGINS`, then redeploy the backend. The Render Blueprint includes `https://smart-hire-khaki-theta.vercel.app` and local development origins.
 
 ## 📧 Gmail Configuration
 
