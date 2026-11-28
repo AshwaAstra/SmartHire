@@ -19,6 +19,7 @@ import com.recruitment.service.FileStorageService;
 
 import javax.imageio.ImageIO;
 import java.io.IOException;
+import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.util.concurrent.TimeUnit;
 
@@ -74,6 +75,10 @@ public class RecruiterController {
             return ResponseEntity.ok().cacheControl(CacheControl.maxAge(10, TimeUnit.MINUTES).cachePrivate())
                     .contentType(MediaType.parseMediaType(fileStorage.contentType(recruiter.getPhotoPath())))
                     .body(fileStorage.readPhoto(recruiter.getPhotoPath()));
+        } catch (FileNotFoundException exception) {
+            recruiter.setPhotoPath(null);
+            recruiters.save(recruiter);
+            return ResponseEntity.notFound().build();
         } catch (IOException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Cloudinary could not load this photo. Upload it again and retry.");
         }

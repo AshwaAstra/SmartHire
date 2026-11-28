@@ -19,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import javax.imageio.ImageIO;
 import java.io.IOException;
+import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.util.concurrent.TimeUnit;
 
@@ -126,6 +127,10 @@ public class CandidateController {
             return ResponseEntity.ok().cacheControl(CacheControl.maxAge(10, TimeUnit.MINUTES).cachePrivate())
                     .contentType(MediaType.parseMediaType(contentType))
                     .body(fileStorage.readPhoto(candidate.getPhotoPath()));
+        } catch (FileNotFoundException exception) {
+            candidate.setPhotoPath(null);
+            candidates.save(candidate);
+            return ResponseEntity.notFound().build();
         } catch (IOException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Cloudinary could not load this photo. Upload it again and retry.");
         }

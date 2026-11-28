@@ -9,8 +9,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
+import java.net.HttpURLConnection;
 import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -111,6 +113,9 @@ public class FileStorageService {
             URLConnection connection = URI.create(urlBuilder.generate(asset.publicId())).toURL().openConnection();
             connection.setConnectTimeout(10_000);
             connection.setReadTimeout(30_000);
+            if (connection instanceof HttpURLConnection httpConnection && httpConnection.getResponseCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+                throw new FileNotFoundException("Cloudinary asset was not found");
+            }
             try (var input = connection.getInputStream(); var output = new ByteArrayOutputStream()) {
                 input.transferTo(output);
                 return output.toByteArray();

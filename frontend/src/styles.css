@@ -972,6 +972,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .recruiter-main header > div > p { color: #73829a; font-size: .76rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .recruiter-main header h1 { margin-top: 6px; color: #173253; font-size: 1.75rem; letter-spacing: -.035em; }
 .recruiter-main .avatar { border: 3px solid #fff; box-shadow: 0 0 0 1px #dce5f1; }
+.recruiter-main .avatar { overflow: hidden; }
+.recruiter-main .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .recruiter-main .stat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 0; }
 .recruiter-main .stat-grid article { min-height: 108px; padding: 19px; border: 1px solid #e5ebf3; border-radius: 15px; box-shadow: 0 4px 14px rgba(27,55,93,.03); }
 .recruiter-main .stat-grid article span { color: #65758d; font-size: .83rem; text-transform: none; }

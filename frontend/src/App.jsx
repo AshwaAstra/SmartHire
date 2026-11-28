@@ -4,6 +4,7 @@ import { api, API_URL } from './api';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 
 async function photoResponse(response) {
+  if (response.status === 404) return null;
   if (response.ok) return response.blob();
   let message = 'Could not load the profile photo.';
   try {
@@ -121,8 +122,8 @@ function RecruiterProfilePage() {
     let objectUrl = '';
     fetch(`${API_URL}/api/recruiters/photo`, { headers: { Authorization: `Bearer ${localStorage.getItem('smarthire_token')}` } })
       .then(photoResponse)
-      .then(blob => { objectUrl = URL.createObjectURL(blob); if (active) setPhotoUrl(objectUrl); })
-      .catch((error) => { if (active) setError(error.message); });
+      .then(blob => { if (!blob) { if (active) setPhotoUrl(''); return; } objectUrl = URL.createObjectURL(blob); if (active) setPhotoUrl(objectUrl); })
+      .catch(() => { if (active) setPhotoUrl(''); });
     return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [profile.photoPath]);
 
@@ -505,11 +506,19 @@ function CandidateWorkspace({ initialView = 'overview' }) {
     })
       .then(photoResponse)
       .then((blob) => {
+        if (!blob) {
+          if (active) {
+            setProfilePhotoUrl('');
+            setProfile((current) => current ? { ...current, photoPath: null } : current);
+            setProfileForm((current) => ({ ...current, photoPath: null }));
+          }
+          return;
+        }
         objectUrl = URL.createObjectURL(blob);
         if (active) setProfilePhotoUrl(objectUrl);
         else URL.revokeObjectURL(objectUrl);
       })
-      .catch((e) => { if (active) showError(e.message); });
+      .catch(() => { if (active) setProfilePhotoUrl(''); });
     return () => {
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
