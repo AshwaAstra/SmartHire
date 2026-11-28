@@ -239,7 +239,7 @@ function AuthPage({ mode }) {
           <button type="button" className={form.role === 'RECRUITER' ? 'auth-role-option selected' : 'auth-role-option'} aria-pressed={form.role === 'RECRUITER'} onClick={()=>setForm({...form,role:'RECRUITER'})}><span className="auth-role-icon recruiter-role-icon">R</span><span><strong>Recruiter</strong><small>Post jobs and hire</small></span><i aria-hidden="true">{form.role === 'RECRUITER' ? '✓' : ''}</i></button>
         </div></fieldset>}
         {error && <p className="form-error" role="alert">{error}</p>}
-        <button className="primary-button auth-submit" disabled={busy}>{busy ? 'Please wait…' : isLogin ? 'Sign in' : 'Create account'}<span aria-hidden="true">→</span></button>
+        <button className="primary-button auth-submit" disabled={busy} aria-busy={busy}>{busy && <span className="auth-submit-spinner" aria-hidden="true" />}{busy ? (isLogin ? 'Signing in…' : 'Creating account…') : isLogin ? 'Sign in' : 'Create account'}{!busy && <span aria-hidden="true">→</span>}</button>
         <p className="auth-switch">{isLogin ? 'New to SmartHire?' : 'Already have an account?'} <Link to={isLogin ? '/register' : '/login'}>{isLogin ? 'Create an account' : 'Sign in'}</Link></p>
       </form>
     </section>

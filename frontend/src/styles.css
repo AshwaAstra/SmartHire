@@ -1115,3 +1115,38 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .recruiter-main .stat-grid { grid-template-columns: 1fr 1fr; }
   .recruiter-main .panel { padding: 18px; }
 }
+
+/* Keep the existing page colors while making screen changes feel intentional. */
+@keyframes smartHireEnter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes smartHireSpin { to { transform: rotate(360deg); } }
+.auth-brand, .auth-shell, .auth-footer { animation: smartHireEnter .42s cubic-bezier(.2,.75,.25,1) both; }
+.auth-shell { animation-delay: .06s; }
+.auth-footer { animation-delay: .12s; }
+.dashboard-main > header, .candidate-main > *, .recruiter-main > *, .dashboard-main > .stat-grid, .dashboard-main > .panel {
+  animation: smartHireEnter .34s cubic-bezier(.2,.75,.25,1) both;
+}
+.candidate-main > *:nth-child(2), .recruiter-main > *:nth-child(2), .dashboard-main > .panel:nth-of-type(2) { animation-delay: .045s; }
+.candidate-main > *:nth-child(3), .recruiter-main > *:nth-child(3), .dashboard-main > .panel:nth-of-type(3) { animation-delay: .09s; }
+.candidate-main > *:nth-child(4), .recruiter-main > *:nth-child(4) { animation-delay: .135s; }
+.auth-card input:focus-visible, .auth-card select:focus-visible, .candidate-layout input:focus-visible, .candidate-layout select:focus-visible, .candidate-layout textarea:focus-visible {
+  outline: none;
+  border-color: #4e83d2;
+  box-shadow: 0 0 0 3px rgba(57,112,194,.13);
+}
+.auth-submit-spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid rgba(255,255,255,.45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: smartHireSpin .7s linear infinite;
+}
+.candidate-layout .panel:hover { transform: translateY(-2px); }
+.candidate-layout .dashboard-sidebar nav button { transition: background-color .2s ease, color .2s ease, transform .2s ease, box-shadow .2s ease; }
+.candidate-layout .dashboard-sidebar nav button.active { box-shadow: inset 3px 0 #2d72cb; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
